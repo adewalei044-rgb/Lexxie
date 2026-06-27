@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from tradingview_data import get_technical_analysis
+from tradingview_data import get_multiple_technical_analysis, get_technical_analysis
 
 
 def make_fake_analysis():
@@ -61,6 +61,34 @@ class GetTechnicalAnalysisTests(unittest.TestCase):
         mock_handler_cls.assert_called_once_with(
             symbol="BTCUSDT", exchange="BINANCE", screener="crypto", interval="1h"
         )
+
+
+class GetMultipleTechnicalAnalysisTests(unittest.TestCase):
+    @patch("tradingview_data._get_multiple_analysis")
+    def test_returns_structured_result_per_symbol(self, mock_get_multiple):
+        mock_get_multiple.return_value = {"NASDAQ:AAPL": make_fake_analysis()}
+
+        result = get_multiple_technical_analysis(["NASDAQ:AAPL"])
+
+        self.assertEqual(result["NASDAQ:AAPL"]["symbol"], "AAPL")
+        self.assertEqual(result["NASDAQ:AAPL"]["price"]["close"], 195.5)
+        self.assertNotIn("error", result["NASDAQ:AAPL"])
+
+    @patch("tradingview_data._get_multiple_analysis")
+    def test_reports_error_for_symbol_not_found(self, mock_get_multiple):
+        mock_get_multiple.return_value = {"NASDAQ:BADSYMBOL": None}
+
+        result = get_multiple_technical_analysis(["NASDAQ:BADSYMBOL"])
+
+        self.assertIn("error", result["NASDAQ:BADSYMBOL"])
+
+    @patch("tradingview_data._get_multiple_analysis")
+    def test_returns_top_level_error_on_failure(self, mock_get_multiple):
+        mock_get_multiple.side_effect = Exception("Screener is empty or not valid.")
+
+        result = get_multiple_technical_analysis(["NASDAQ:AAPL"], screener="")
+
+        self.assertIn("error", result)
 
 
 if __name__ == "__main__":

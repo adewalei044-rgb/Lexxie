@@ -14,8 +14,11 @@ python3 -m venv .venv
 ```
 
 `.mcp.json` registers the server (`tradingview_mcp_server.py`) for Claude
-Code automatically; it exposes one tool, `get_analysis(symbol, exchange,
-screener="america", interval="1d")`.
+Code automatically; it exposes two tools:
+
+- `get_analysis(symbol, exchange, screener="america", interval="1d")` for one symbol.
+- `get_multiple_analysis(symbols, screener="america", interval="1d")` for several
+  at once, e.g. `["NASDAQ:AAPL", "NASDAQ:TSLA"]`.
 
 Run it directly without Claude:
 

@@ -6,30 +6,10 @@ import json
 import sys
 
 from tradingview_ta import TA_Handler
+from tradingview_ta import get_multiple_analysis as _get_multiple_analysis
 
 
-def get_technical_analysis(symbol, exchange, screener="america", interval="1d"):
-    """Fetch TradingView's technical analysis for a symbol.
-
-    Returns a dict with the recommendation summary, oscillators, moving
-    averages, price, and key indicators. On failure, returns a dict with
-    an "error" key instead of raising.
-    """
-    handler = TA_Handler(
-        symbol=symbol,
-        exchange=exchange,
-        screener=screener,
-        interval=interval,
-    )
-    try:
-        analysis = handler.get_analysis()
-    except Exception as exc:
-        return {
-            "symbol": symbol,
-            "exchange": exchange,
-            "error": str(exc),
-        }
-
+def _format_analysis(analysis):
     indicators = analysis.indicators
     return {
         "symbol": analysis.symbol,
@@ -55,6 +35,57 @@ def get_technical_analysis(symbol, exchange, screener="america", interval="1d"):
             "ADX": indicators.get("ADX"),
         },
     }
+
+
+def get_technical_analysis(symbol, exchange, screener="america", interval="1d"):
+    """Fetch TradingView's technical analysis for a symbol.
+
+    Returns a dict with the recommendation summary, oscillators, moving
+    averages, price, and key indicators. On failure, returns a dict with
+    an "error" key instead of raising.
+    """
+    handler = TA_Handler(
+        symbol=symbol,
+        exchange=exchange,
+        screener=screener,
+        interval=interval,
+    )
+    try:
+        analysis = handler.get_analysis()
+    except Exception as exc:
+        return {
+            "symbol": symbol,
+            "exchange": exchange,
+            "error": str(exc),
+        }
+
+    return _format_analysis(analysis)
+
+
+def get_multiple_technical_analysis(symbols, screener="america", interval="1d"):
+    """Fetch TradingView's technical analysis for multiple symbols at once.
+
+    Args:
+        symbols: List of "EXCHANGE:SYMBOL" strings, e.g. ["NASDAQ:AAPL", "NASDAQ:TSLA"].
+        screener: Market screener, e.g. "america", "crypto", "forex".
+        interval: Candle interval, e.g. "1d".
+
+    Returns a dict keyed by "EXCHANGE:SYMBOL". Each value is either a
+    structured analysis dict (same shape as get_technical_analysis) or an
+    "error" dict if that symbol couldn't be analyzed.
+    """
+    try:
+        raw_results = _get_multiple_analysis(screener=screener, interval=interval, symbols=symbols)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    results = {}
+    for key, analysis in raw_results.items():
+        if analysis is None:
+            results[key] = {"error": "Exchange or symbol not found."}
+        else:
+            results[key] = _format_analysis(analysis)
+    return results
 
 
 def main():

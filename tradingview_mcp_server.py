@@ -3,7 +3,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from tradingview_data import get_technical_analysis
+from tradingview_data import get_multiple_technical_analysis, get_technical_analysis
 
 mcp = FastMCP("tradingview")
 
@@ -19,6 +19,18 @@ def get_analysis(symbol: str, exchange: str, screener: str = "america", interval
         interval: Candle interval, e.g. "1m", "5m", "1h", "1d", "1W" (default: "1d").
     """
     return get_technical_analysis(symbol, exchange, screener, interval)
+
+
+@mcp.tool()
+def get_multiple_analysis(symbols: list[str], screener: str = "america", interval: str = "1d") -> dict:
+    """Get TradingView technical analysis for several symbols at once.
+
+    Args:
+        symbols: List of "EXCHANGE:SYMBOL" strings, e.g. ["NASDAQ:AAPL", "NASDAQ:TSLA"].
+        screener: Market screener, e.g. "america", "crypto", "forex" (default: "america").
+        interval: Candle interval, e.g. "1m", "5m", "1h", "1d", "1W" (default: "1d").
+    """
+    return get_multiple_technical_analysis(symbols, screener, interval)
 
 
 if __name__ == "__main__":
