@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tradingview": {
+      "command": "python3",
+      "args": ["tradingview_mcp_server.py"]
+    }
+  }
+}
