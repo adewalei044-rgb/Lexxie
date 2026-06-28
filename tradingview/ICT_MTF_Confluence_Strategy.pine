@@ -59,7 +59,6 @@ qtyForAlert   = input.float(1, "Quantity field to send in JSON", group = grpWebh
 
 grpVis        = "8) Visuals"
 showZoneLines = input.bool(true, "Show Gann Zone Lines", group = grpVis)
-showBg        = input.bool(true, "Show Trend Background", group = grpVis)
 showTable     = input.bool(true, "Show Status Table", group = grpVis)
 showTradeBoxes= input.bool(true, "Show Entry/TP/SL Boxes", group = grpVis)
 boxExtendBars = input.int(30, "Box Min Width (bars)", group = grpVis)
@@ -301,8 +300,6 @@ if showTradeBoxes and strategy.position_size != 0 and not na(profitBox)
 // ----------------------------------------------------------------------------
 // 7) VISUALS
 // ----------------------------------------------------------------------------
-bgcolor(showBg ? (trendBullish ? color.new(color.green, 92) : trendBearish ? color.new(color.red, 92) : na) : na)
-
 plot(showZoneLines and trendBullish ? longZoneLow  : na, "Long Zone Low",  color.new(color.lime, 0),  style = plot.style_linebr)
 plot(showZoneLines and trendBullish ? longZoneHigh : na, "Long Zone High", color.new(color.lime, 0),  style = plot.style_linebr)
 plot(showZoneLines and trendBearish ? shortZoneLow  : na, "Short Zone Low",  color.new(color.red, 0), style = plot.style_linebr)
