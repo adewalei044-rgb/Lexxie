@@ -34,6 +34,7 @@ longZoneLowPct  = input.float(0.5,  "Long Zone Low (0-1 of candle range)",  step
 longZoneHighPct = input.float(0.75, "Long Zone High (0-1 of candle range)", step = 0.01, group = grp1h)
 shortZoneLowPct = input.float(0.25, "Short Zone Low (0-1 of candle range)", step = 0.01, group = grp1h)
 shortZoneHighPct= input.float(0.5,  "Short Zone High (0-1 of candle range)",step = 0.01, group = grp1h)
+momentumOverlapPct = input.float(0.25, "Momentum Overlap Tolerance (0=strict no overlap)", minval = 0.0, maxval = 0.9, step = 0.05, group = grp1h)
 
 grpHunt       = "3) 1m Stop Hunt"
 huntLookback  = input.int(10, "Swing Lookback (bars)", group = grpHunt)
@@ -91,9 +92,13 @@ h1BodyHigh = math.max(h1Open, h1Close)
 h1BodyLow  = math.min(h1Open, h1Close)
 h2BodyHigh = math.max(h2Open, h2Close)
 h2BodyLow  = math.min(h2Open, h2Close)
+h2BodySize = h2BodyHigh - h2BodyLow
 
-bullishBodyShift = h1BodyLow  > h2BodyHigh   // 1H candle body entirely above prior candle's body
-bearishBodyShift = h1BodyHigh < h2BodyLow    // 1H candle body entirely below prior candle's body
+// momentumOverlapPct = 0 reproduces the original strict "body fully above/
+// below prior body" rule; >0 allows that fraction of the prior body's size
+// to overlap so momentum shifts aren't disqualified by a sliver of overlap.
+bullishBodyShift = h1BodyLow  > h2BodyHigh - momentumOverlapPct * h2BodySize   // 1H candle body above prior candle's body (tolerance-adjusted)
+bearishBodyShift = h1BodyHigh < h2BodyLow + momentumOverlapPct * h2BodySize   // 1H candle body below prior candle's body (tolerance-adjusted)
 
 h1Range = h1High - h1Low
 longZoneLow   = h1Low + longZoneLowPct   * h1Range
