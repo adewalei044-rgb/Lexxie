@@ -224,10 +224,14 @@ f_extend_box_endpoint(box_array) =>
 //
 //CALCULATIONS
 //
+intradayMinutes = timeframe.multiplier * intRes
+// intraday timeframe strings are capped at 1440 minutes by TradingView; above that,
+// request.security() throws RE10061 ("Invalid value of the 'timeframe' argument").
+// Roll over into a daily string once the computed minutes exceed that cap.
 stratRes = timeframe.ismonthly  ? str.tostring(timeframe.multiplier * intRes, '###M') :
            timeframe.isweekly   ? str.tostring(timeframe.multiplier * intRes, '###W') :
            timeframe.isdaily    ? str.tostring(timeframe.multiplier * intRes, '###D') :
-           timeframe.isintraday ? str.tostring(timeframe.multiplier * intRes, '####') :
+           timeframe.isintraday ? (intradayMinutes > 1440 ? str.tostring(math.ceil(intradayMinutes / 1440), '###D') : str.tostring(intradayMinutes, '####')) :
            '60'
 src      = h ? request.security(ticker.heikinashi(syminfo.tickerid),
            timeframe.period, close, lookahead = barmerge.lookahead_off) : close
