@@ -32,25 +32,25 @@ trendTF  = input.timeframe("240", "Trend Timeframe", tooltip = "Timeframe used f
 
 grp1h        = "Step 2 - Momentum + Entry Zone (1H)"
 htfTF        = input.timeframe("60", "1H Signal Timeframe", tooltip = "Timeframe used for momentum and the Gann box zone. Default 60 = 1 hour.", group = grp1h)
-longZoneLowPct  = input.float(0.5,  "Long Zone Low (0-1 of candle range)",  step = 0.01, tooltip = "Bottom edge of the pullback zone for longs, as a fraction of the 1H candle's range. Widen this range (lower this, raise the High) to make price qualify more often.", group = grp1h)
-longZoneHighPct = input.float(0.75, "Long Zone High (0-1 of candle range)", step = 0.01, tooltip = "Top edge of the pullback zone for longs.", group = grp1h)
-shortZoneLowPct = input.float(0.25, "Short Zone Low (0-1 of candle range)", step = 0.01, tooltip = "Bottom edge of the pullback zone for shorts.", group = grp1h)
-shortZoneHighPct= input.float(0.5,  "Short Zone High (0-1 of candle range)",step = 0.01, tooltip = "Top edge of the pullback zone for shorts. Widen this range to make price qualify more often.", group = grp1h)
-momentumOverlapPct = input.float(0.25, "Momentum Overlap Tolerance (0=strict no overlap)", minval = 0.0, maxval = 0.9, step = 0.05, tooltip = "0 = the 1H candle body must be fully clear of the prior candle's body (strictest). Raising this toward 0.9 allows more overlap, so momentum shifts trigger more easily.", group = grp1h)
+longZoneLowPct  = input.float(0.38,  "Long Zone Low (0-1 of candle range)",  step = 0.01, tooltip = "Bottom edge of the pullback zone for longs, as a fraction of the 1H candle's range. Widen this range (lower this, raise the High) to make price qualify more often.", group = grp1h)
+longZoneHighPct = input.float(0.88, "Long Zone High (0-1 of candle range)", step = 0.01, tooltip = "Top edge of the pullback zone for longs.", group = grp1h)
+shortZoneLowPct = input.float(0.12, "Short Zone Low (0-1 of candle range)", step = 0.01, tooltip = "Bottom edge of the pullback zone for shorts.", group = grp1h)
+shortZoneHighPct= input.float(0.62,  "Short Zone High (0-1 of candle range)",step = 0.01, tooltip = "Top edge of the pullback zone for shorts. Widen this range to make price qualify more often.", group = grp1h)
+momentumOverlapPct = input.float(0.5, "Momentum Overlap Tolerance (0=strict no overlap)", minval = 0.0, maxval = 0.9, step = 0.05, tooltip = "0 = the 1H candle body must be fully clear of the prior candle's body (strictest). Raising this toward 0.9 allows more overlap, so momentum shifts trigger more easily.", group = grp1h)
 
 grpHunt       = "Step 3 - Stop Hunt (1m)"
-huntLookback  = input.int(10, "Swing Lookback (bars)", tooltip = "How many bars back to look for the swing high/low that price must sweep. Raising this finds sweeps more often.", group = grpHunt)
-huntValidBars = input.int(15, "Stop Hunt Stays Valid For (bars)", tooltip = "How many bars after a sweep the setup stays eligible. Raising this gives more time for the rest of the confluence to line up.", group = grpHunt)
+huntLookback  = input.int(20, "Swing Lookback (bars)", tooltip = "How many bars back to look for the swing high/low that price must sweep. Raising this finds sweeps more often.", group = grpHunt)
+huntValidBars = input.int(30, "Stop Hunt Stays Valid For (bars)", tooltip = "How many bars after a sweep the setup stays eligible. Raising this gives more time for the rest of the confluence to line up.", group = grpHunt)
 
 grpFVG        = "Step 4 - Fair Value Gap Confluence (1m + 5m)"
 ltfFVGTF      = input.timeframe("1", "Entry FVG Timeframe", tooltip = "Timeframe used for the entry-trigger FVG. Default 1 = 1 minute.", group = grpFVG)
 htfFVGTF      = input.timeframe("5", "Confluence FVG Timeframe", tooltip = "Timeframe used for the confirming FVG. Default 5 = 5 minutes.", group = grpFVG)
-fvgMaxAge     = input.int(50, "Max FVG / Stop-Hunt Age (bars)", tooltip = "How many bars an FVG stays usable after it forms. Raising this keeps gaps active longer, increasing the chance of a match.", group = grpFVG)
-fvgMaxActive  = input.int(20, "Max Tracked FVGs per Timeframe", tooltip = "How many recent gaps are remembered at once. Raising this tracks more gaps simultaneously.", group = grpFVG)
-fvgOverlapBufferPct = input.float(1.0, "Overlap Tolerance (x each zone's own size)", minval = 0.0, step = 0.25, tooltip = "Requiring the 1m FVG, the Gann zone, and the 5m FVG to literally overlap in price is very strict — true gaps rarely line up to the exact cent across three different bands. This pads each side of the Gann-zone and 5m-FVG checks by this multiple of that zone's own size before testing overlap, so near-misses still count as confluence. 0 = exact overlap only (original strict rule, may produce 0 trades). Raise this if 'FVG Confluences' stays at 0.", group = grpFVG)
+fvgMaxAge     = input.int(100, "Max FVG / Stop-Hunt Age (bars)", tooltip = "How many bars an FVG stays usable after it forms. Raising this keeps gaps active longer, increasing the chance of a match.", group = grpFVG)
+fvgMaxActive  = input.int(40, "Max Tracked FVGs per Timeframe", tooltip = "How many recent gaps are remembered at once. Raising this tracks more gaps simultaneously.", group = grpFVG)
+fvgOverlapBufferPct = input.float(2.0, "Overlap Tolerance (x each zone's own size)", minval = 0.0, step = 0.25, tooltip = "Requiring the 1m FVG, the Gann zone, and the 5m FVG to literally overlap in price is very strict — true gaps rarely line up to the exact cent across three different bands. This pads each side of the Gann-zone and 5m-FVG checks by this multiple of that zone's own size before testing overlap, so near-misses still count as confluence. 0 = exact overlap only (original strict rule, may produce 0 trades). Raise this if 'FVG Confluences' stays at 0.", group = grpFVG)
 
 grpReject     = "Step 5 - Entry Trigger (Rejection Candle)"
-rejWickFactor = input.float(1.5, "Min Wick-to-Body Ratio", step = 0.1, tooltip = "How much bigger the rejecting wick must be than the candle body. Lowering toward 1.0 makes the trigger easier to satisfy.", group = grpReject)
+rejWickFactor = input.float(1.0, "Min Wick-to-Body Ratio", step = 0.1, tooltip = "How much bigger the rejecting wick must be than the candle body. Lowering toward 1.0 makes the trigger easier to satisfy.", group = grpReject)
 
 grpRisk       = "Step 6 - Risk Management (SL / TP)"
 rrMultiple    = input.float(2.0, "Reward : Risk Multiple", step = 0.1, tooltip = "Take-profit distance as a multiple of the stop-loss distance, e.g. 2.0 = TP is 2x further than SL.", group = grpRisk)
