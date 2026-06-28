@@ -75,6 +75,13 @@ showTable     = input.bool(true, "Show Status Table", tooltip = "Show the on-cha
 showTradeBoxes= input.bool(true, "Show Entry/TP/SL Boxes", tooltip = "Draw colored profit/risk boxes on each trade instead of a plain label.", group = grpVis)
 boxExtendBars = input.int(30, "Box Min Width (bars)", tooltip = "Minimum width (in bars) of the trade boxes drawn on entry.", group = grpVis)
 
+grpLimits           = "Step 9 - Daily Trade / Loss Limits (Optional, default Off)"
+enableDailyLimit    = input.bool(false, "Daily Trade / Loss Limit", tooltip = "Off = no daily cap. On = blocks new entries once max trades/day or max daily loss % (from equity at day start) is hit.", group = grpLimits)
+maxDailyTrades      = input.int(10, "Max Trades Per Day", minval = 1, group = grpLimits)
+maxDailyLossPct     = input.float(2.0, "Max Daily Loss % (of day-start equity)", minval = 0.1, group = grpLimits)
+enableDrawdownLimit = input.bool(false, "Max Drawdown Limit", tooltip = "Off = no drawdown cap. On = blocks new entries once drawdown from peak equity exceeds this %.", group = grpLimits)
+maxDrawdownLimitPct = input.float(20.0, "Max Drawdown % - Stop New Entries", minval = 1.0, group = grpLimits)
+
 // ----------------------------------------------------------------------------
 // 1) 4H TREND FILTER
 // ----------------------------------------------------------------------------
@@ -261,12 +268,32 @@ findSetup(isBull, gannLow, gannHigh, enableGann, enableHtfConf, enableRej) =>
 
 barGate = useConfirmedBar ? barstate.isconfirmed : true
 
+// ----------------------------------------------------------------------------
+// 5B) DAILY TRADE / LOSS + DRAWDOWN LIMITS (Optional, default Off)
+// ----------------------------------------------------------------------------
+newDay = ta.change(dayofmonth(time)) != 0
+var float dayStartEquity = strategy.initial_capital
+var int   dayTradeCount  = 0
+if newDay
+    dayStartEquity := strategy.equity
+    dayTradeCount  := 0
+
+dailyLossPctNow = dayStartEquity > 0 ? (dayStartEquity - strategy.equity) / dayStartEquity * 100.0 : 0.0
+dailyLimitOk = not enableDailyLimit or (dayTradeCount < maxDailyTrades and dailyLossPctNow < maxDailyLossPct)
+
+var float gatePeakEquity = strategy.initial_capital
+gatePeakEquity := math.max(gatePeakEquity, strategy.equity)
+liveDrawdownPct = gatePeakEquity > 0 ? (gatePeakEquity - strategy.equity) / gatePeakEquity * 100.0 : 0.0
+drawdownLimitOk = not enableDrawdownLimit or liveDrawdownPct < maxDrawdownLimitPct
+
+riskGateOk = dailyLimitOk and drawdownLimitOk
+
 // Each "not enableX or ..." term bypasses (always passes) that stage when its
 // Step 0 toggle is off. With all toggles at their default (true), this is
 // exactly equivalent to the original longSetupActive/shortSetupActive +
 // stopHuntLongActive/stopHuntShortActive gating — zero behavior change.
-longSignal  = (not enableTrendFilter or trendBullish) and (not enableMomentumShift or bullishBodyShift) and (not enableGannZone or priceInLongZone) and (not enableStopHunt or stopHuntLongActive) and longFVGFound and barGate and strategy.position_size <= 0
-shortSignal = (not enableTrendFilter or trendBearish) and (not enableMomentumShift or bearishBodyShift) and (not enableGannZone or priceInShortZone) and (not enableStopHunt or stopHuntShortActive) and shortFVGFound and barGate and strategy.position_size >= 0
+longSignal  = (not enableTrendFilter or trendBullish) and (not enableMomentumShift or bullishBodyShift) and (not enableGannZone or priceInLongZone) and (not enableStopHunt or stopHuntLongActive) and longFVGFound and barGate and riskGateOk and strategy.position_size <= 0
+shortSignal = (not enableTrendFilter or trendBearish) and (not enableMomentumShift or bearishBodyShift) and (not enableGannZone or priceInShortZone) and (not enableStopHunt or stopHuntShortActive) and shortFVGFound and barGate and riskGateOk and strategy.position_size >= 0
 
 // ----------------------------------------------------------------------------
 // 6) RISK MANAGEMENT + WEBHOOK ALERT PAYLOADS
@@ -288,8 +315,8 @@ drawTradeVisuals(isLong, entryPrice, sl, tp) =>
     riskBottom   = isLong ? sl : entryPrice
     newProfitBox = box.new(bar_index, profitTop, rightBar, profitBottom, border_color = color.green, bgcolor = color.new(color.green, 85))
     newRiskBox   = box.new(bar_index, riskTop, rightBar, riskBottom, border_color = color.red, bgcolor = color.new(color.red, 85))
-    newLabel     = label.new(bar_index, entryPrice,
-         str.format("{0}\nEntry {1}\nTP {2}\nSL {3}\nR:R 1:{4}", isLong ? "BUY" : "SELL", entryPrice, tp, sl, rrMultiple),
+    newLabel     = label.new(bar_index, isLong ? entryPrice - (tp - entryPrice) * 0.1 : entryPrice + (entryPrice - tp) * 0.1,
+         isLong ? "BUY" : "SELL",
          style = isLong ? label.style_label_up : label.style_label_down,
          color = isLong ? color.green : color.red, textcolor = color.white, size = size.small)
     [newProfitBox, newRiskBox, newLabel]
@@ -306,6 +333,7 @@ if longSignal
     exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"long\",\"strategy\":\"ICT-MTF-Confluence\"}"
     strategy.entry("Long", strategy.long, alert_message = longMsg)
     strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+    dayTradeCount := dayTradeCount + 1
     if showTradeBoxes
         [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice)
         profitBox  := pb
@@ -324,6 +352,7 @@ if shortSignal
     exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"short\",\"strategy\":\"ICT-MTF-Confluence\"}"
     strategy.entry("Short", strategy.short, alert_message = shortMsg)
     strategy.exit("Short Exit", from_entry = "Short", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+    dayTradeCount := dayTradeCount + 1
     if showTradeBoxes
         [pb, rb, el] = drawTradeVisuals(false, close, slPrice, tpPrice)
         profitBox  := pb
@@ -394,52 +423,64 @@ if longTouchHit or shortTouchHit
 
 chartTFOk = timeframe.period == ltfFVGTF
 
+titleBg   = color.rgb(20, 22, 38)
+titleText = color.rgb(255, 205, 60)
+labelBg   = color.rgb(32, 35, 52)
+labelText = color.rgb(190, 198, 220)
+neutralBg = color.rgb(45, 50, 75)
+okBg      = color.rgb(15, 120, 80)
+warnBg    = color.rgb(160, 35, 45)
+winRateBg = color.rgb(10, 95, 145)
+ddBg      = color.rgb(195, 120, 15)
+
 if showTable
-    var table statusTbl = table.new(position.top_right, 2, 23, border_width = 1)
+    var table statusTbl = table.new(position.top_right, 2, 24, border_width = 2, border_color = color.rgb(255, 205, 60))
     if barstate.islast
-        table.cell(statusTbl, 0, 0, "Chart TF Match", bgcolor = chartTFOk ? color.gray : color.red, text_color = color.white)
-        table.cell(statusTbl, 1, 0, chartTFOk ? "OK (" + timeframe.period + ")" : "MISMATCH! Chart=" + timeframe.period + " Entry TF=" + ltfFVGTF, text_color = color.white, bgcolor = chartTFOk ? color.new(color.green, 60) : color.new(color.red, 40))
-        table.cell(statusTbl, 0, 1, "Win Rate",      bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 1, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
-        table.cell(statusTbl, 0, 2, "Time",          bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 2, currentTimeStr,  text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 3, "Win Trades",    bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 3, str.tostring(winTrades), text_color = color.white, bgcolor = color.new(color.green, 60))
-        table.cell(statusTbl, 0, 4, "Loss Trades",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 4, str.tostring(lossTrades), text_color = color.white, bgcolor = color.new(color.red, 60))
-        table.cell(statusTbl, 0, 5, "Max Drawdown", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 5, str.tostring(maxDrawdownPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.orange, 60))
-        table.cell(statusTbl, 0, 6, "4H Trend",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 6, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? color.green : trendBearish ? color.red : color.gray, text_color = color.white)
-        table.cell(statusTbl, 0, 7, "1H Momentum",  bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 7, bullishBodyShift ? "Bull Shift" : bearishBodyShift ? "Bear Shift" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 8, "Gann Zone",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 8, longSetupActive ? "Long Active" : shortSetupActive ? "Short Active" : "Inactive", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 9, "Stop Hunt",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 9, stopHuntLongActive ? "Long Sweep" : stopHuntShortActive ? "Short Sweep" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 10, "1m/5m FVG",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 10, longFVGFound ? "Long Confluent" : shortFVGFound ? "Short Confluent" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 11, "Position",      bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 11, strategy.position_size > 0 ? "Long" : strategy.position_size < 0 ? "Short" : "Flat", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 12, "Last Signal",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 12, longSignal ? "LONG" : shortSignal ? "SHORT" : "-", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 13, "Total Bars",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 13, str.tostring(totalBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 14, "Trend Bars",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 14, str.tostring(trendBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 15, "Momentum Events", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 15, str.tostring(momentumEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 16, "Zone Touch Bars", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 16, str.tostring(zoneTouchBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 17, "Stop Hunt Events", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 17, str.tostring(stopHuntEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 18, "FVG Confluences", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 18, str.tostring(fvgConfluences), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 19, "FVG: Dir Match", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 19, str.tostring(fvgDirMatches), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 20, "FVG: Gann Hit", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 20, str.tostring(fvgGannHits), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 21, "FVG: HTF Hit", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 21, str.tostring(fvgHtfHits), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 22, "FVG: Touch Hit", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 22, str.tostring(fvgTouchHits), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 0, "STRATEGY STATS", bgcolor = titleBg, text_color = titleText, text_size = size.normal)
+        table.cell(statusTbl, 1, 0, "", bgcolor = titleBg)
+        table.cell(statusTbl, 0, 1, "Chart TF Match", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 1, chartTFOk ? "OK (" + timeframe.period + ")" : "MISMATCH! Chart=" + timeframe.period + " Entry TF=" + ltfFVGTF, text_color = color.white, bgcolor = chartTFOk ? okBg : warnBg)
+        table.cell(statusTbl, 0, 2, "Win Rate",      bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 2, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = winRateBg)
+        table.cell(statusTbl, 0, 3, "Time",          bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 3, currentTimeStr,  text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 4, "Win Trades",    bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 4, str.tostring(winTrades), text_color = color.white, bgcolor = okBg)
+        table.cell(statusTbl, 0, 5, "Loss Trades",   bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 5, str.tostring(lossTrades), text_color = color.white, bgcolor = warnBg)
+        table.cell(statusTbl, 0, 6, "Max Drawdown", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 6, str.tostring(maxDrawdownPct, "#.##") + "%", text_color = color.white, bgcolor = ddBg)
+        table.cell(statusTbl, 0, 7, "4H Trend",     bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 7, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? okBg : trendBearish ? warnBg : neutralBg, text_color = color.white)
+        table.cell(statusTbl, 0, 8, "1H Momentum",  bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 8, bullishBodyShift ? "Bull Shift" : bearishBodyShift ? "Bear Shift" : "None", text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 9, "Gann Zone",     bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 9, longSetupActive ? "Long Active" : shortSetupActive ? "Short Active" : "Inactive", text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 10, "Stop Hunt",     bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 10, stopHuntLongActive ? "Long Sweep" : stopHuntShortActive ? "Short Sweep" : "None", text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 11, "1m/5m FVG",     bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 11, longFVGFound ? "Long Confluent" : shortFVGFound ? "Short Confluent" : "None", text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 12, "Position",      bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 12, strategy.position_size > 0 ? "Long" : strategy.position_size < 0 ? "Short" : "Flat", text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 13, "Last Signal",   bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 13, longSignal ? "LONG" : shortSignal ? "SHORT" : "-", text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 14, "Total Bars",   bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 14, str.tostring(totalBars), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 15, "Trend Bars",   bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 15, str.tostring(trendBars), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 16, "Momentum Events", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 16, str.tostring(momentumEvents), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 17, "Zone Touch Bars", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 17, str.tostring(zoneTouchBars), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 18, "Stop Hunt Events", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 18, str.tostring(stopHuntEvents), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 19, "FVG Confluences", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 19, str.tostring(fvgConfluences), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 20, "FVG: Dir Match", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 20, str.tostring(fvgDirMatches), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 21, "FVG: Gann Hit", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 21, str.tostring(fvgGannHits), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 22, "FVG: HTF Hit", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 22, str.tostring(fvgHtfHits), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 23, "FVG: Touch Hit", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 23, str.tostring(fvgTouchHits), text_color = color.white, bgcolor = neutralBg)
