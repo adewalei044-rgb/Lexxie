@@ -47,6 +47,7 @@ ltfFVGTF      = input.timeframe("1", "Entry FVG Timeframe", tooltip = "Timeframe
 htfFVGTF      = input.timeframe("5", "Confluence FVG Timeframe", tooltip = "Timeframe used for the confirming FVG. Default 5 = 5 minutes.", group = grpFVG)
 fvgMaxAge     = input.int(50, "Max FVG / Stop-Hunt Age (bars)", tooltip = "How many bars an FVG stays usable after it forms. Raising this keeps gaps active longer, increasing the chance of a match.", group = grpFVG)
 fvgMaxActive  = input.int(20, "Max Tracked FVGs per Timeframe", tooltip = "How many recent gaps are remembered at once. Raising this tracks more gaps simultaneously.", group = grpFVG)
+fvgOverlapBufferPct = input.float(1.0, "Overlap Tolerance (x each zone's own size)", minval = 0.0, step = 0.25, tooltip = "Requiring the 1m FVG, the Gann zone, and the 5m FVG to literally overlap in price is very strict — true gaps rarely line up to the exact cent across three different bands. This pads each side of the Gann-zone and 5m-FVG checks by this multiple of that zone's own size before testing overlap, so near-misses still count as confluence. 0 = exact overlap only (original strict rule, may produce 0 trades). Raise this if 'FVG Confluences' stays at 0.", group = grpFVG)
 
 grpReject     = "Step 5 - Entry Trigger (Rejection Candle)"
 rejWickFactor = input.float(1.5, "Min Wick-to-Body Ratio", step = 0.1, tooltip = "How much bigger the rejecting wick must be than the candle body. Lowering toward 1.0 makes the trigger easier to satisfy.", group = grpReject)
@@ -190,6 +191,8 @@ trackFVG(htfFVGTF, fvgMaxActive, htfTop, htfBot, htfBull, htfBar)
 //    Default confluence rule: 1m FVG price range overlaps an active 5m FVG.
 //    Also requires the 1m FVG to overlap the 1H Gann box retracement zone,
 //    so the trade fires exactly at the level defined in step 2/3.
+//    fvgOverlapBufferPct pads both of those overlap checks so near-misses
+//    between the three narrow bands still register as confluence.
 // ----------------------------------------------------------------------------
 findSetup(isBull, gannLow, gannHigh) =>
     body      = math.abs(close - open)
@@ -211,7 +214,8 @@ findSetup(isBull, gannLow, gannHigh) =>
                 dirMatch := true
                 t1 = array.get(ltfTop, i)
                 b1 = array.get(ltfBot, i)
-                gannOverlap = math.max(b1, gannLow) <= math.min(t1, gannHigh)
+                gannPad = (gannHigh - gannLow) * fvgOverlapBufferPct
+                gannOverlap = math.max(b1, gannLow - gannPad) <= math.min(t1, gannHigh + gannPad)
                 if gannOverlap
                     gannHit := true
                     conf = false
@@ -221,7 +225,8 @@ findSetup(isBull, gannLow, gannHigh) =>
                             if array.get(htfBull, j) == isBull and (bar_index - array.get(htfBar, j)) <= fvgMaxAge
                                 t5 = array.get(htfTop, j)
                                 b5 = array.get(htfBot, j)
-                                if math.max(b1, b5) <= math.min(t1, t5)
+                                pad5 = (t5 - b5) * fvgOverlapBufferPct
+                                if math.max(b1, b5 - pad5) <= math.min(t1, t5 + pad5)
                                     conf := true
                     if conf
                         htfHit := true

@@ -5,24 +5,24 @@
 1. **4H trend filter** — trend is bullish/bearish based on price vs. a 200-period MA (EMA or SMA, input-selectable) on the 4H chart.
 2. **1H momentum + Gann box zone** — the most recently closed 1H candle's body must sit above (bull trend) or below (bear trend) the prior 1H candle's body, with `momentumOverlapPct` (default 0.25) allowing that fraction of the prior body's size to overlap before disqualifying the shift — set it to 0 for the original strict "zero overlap" rule. The 1H candle's low-to-high range is then divided with a Gann-box-style retracement: long entries are only considered while price is trading back into the **0.5–0.75** zone of that range, shorts into the **0.25–0.5** zone (both ratios are inputs).
 3. **1m stop hunt** — a wick sweep of a recent swing low/high that closes back inside (liquidity grab) on the 1-minute chart, valid for a configurable number of bars.
-4. **1m FVG with 5m confluence** — a 3-candle Fair Value Gap on the 1-minute chart is only actionable if its price range overlaps both the 1H Gann zone *and* an active, unfilled 5-minute FVG in the same direction.
+4. **1m FVG with 5m confluence** — a 3-candle Fair Value Gap on the 1-minute chart is only actionable if its price range overlaps both the 1H Gann zone *and* an active, unfilled 5-minute FVG in the same direction. `fvgOverlapBufferPct` (default 1.0) pads both of those overlap checks by that multiple of each zone's own size, since exact-cent overlap across three narrow bands is rare in practice — set it to 0 for the original strict, exact-overlap-only rule.
 5. **Rejection candle trigger** — the trade fires when a 1-minute candle wicks into that confluent FVG zone and closes back out with a wick at least `rejWickFactor × body` (default 1.5×) in the trade direction.
 
 ## Assumptions made (no response received when these were asked)
 
 - **Stop-loss / take-profit**: SL is placed just beyond the stop-hunt wick that swept liquidity (plus a small tick buffer), TP is a configurable risk:reward multiple of that distance (default 2R). Both are inputs under "6) Risk Management" — change `rrMultiple` and `slBufferTicks`, or rewire the `strategy.exit()` calls if you'd rather use the FVG boundary or a fixed percentage instead.
-- **FVG confluence rule**: defined as price-range overlap between the 1m FVG and an active 5m FVG (not strict containment, not a distance tolerance). Adjust the overlap check in `findSetup()` if you want stricter containment instead.
+- **FVG confluence rule**: defined as price-range overlap (with `fvgOverlapBufferPct` tolerance padding, default 1.0x) between the 1m FVG, the 1H Gann zone, and an active 5m FVG. Set `fvgOverlapBufferPct` to 0 for the original strict, exact-overlap-only rule, or adjust the overlap check in `findSetup()` directly for stricter containment instead.
 
 ## If you're seeing 0 trades / all-zero stats
 
 The status table's Win/Loss/Win%/Drawdown rows only change once a trade closes, and the BUY/SELL labels only draw when `longSignal`/`shortSignal` fires. If those are all blank or zero, it almost always means the strategy hasn't found a single bar where **every** stage of the confluence chain (4H trend, 1H momentum shift, Gann zone, 1m stop hunt, FVG confluence, rejection wick) was true at once — not a bug, just a very strict setup.
 
-The table now includes diagnostic counters (Total Bars, Trend Bars, Momentum Events, Zone Touch Bars, Stop Hunt Events, FVG Confluences) so you can see which stage is the bottleneck:
+The table now includes diagnostic counters (Total Bars, Trend Bars, Momentum Events, Zone Touch Bars, Stop Hunt Events, FVG Confluences, and FVG: Dir Match / Gann Hit / HTF Hit / Touch Hit) so you can see which stage is the bottleneck:
 
 - **Trend Bars** close to **Total Bars** but **Momentum Events** near 0 → your instrument rarely produces clean non-overlapping 1H candle bodies; consider a more volatile pair or longer backtest range.
 - **Zone Touch Bars** near 0 → price rarely retraces into the 0.5–0.75 / 0.25–0.5 box; check `longZoneLowPct`/`longZoneHighPct` inputs.
 - **Stop Hunt Events** near 0 → widen `huntLookback`/`huntValidBars`.
-- **FVG Confluences** near 0 even though the other counters are healthy → 1m/5m FVGs rarely overlap each other and the Gann zone at the same time on this symbol; try a higher-volatility instrument or loosen `fvgMaxAge`/`rejWickFactor`.
+- **FVG Confluences** near 0 even though the other counters are healthy → requiring a 1m FVG, the 1H Gann zone, and a 5m FVG to literally overlap in price is very strict, since all three are narrow bands. Raise `fvgOverlapBufferPct` (default 1.0) to pad the overlap checks so near-misses still count — the four **FVG: Dir Match / Gann Hit / HTF Hit / Touch Hit** rows show exactly which of the four sub-stages (FVG exists in the right direction → overlaps the Gann zone → overlaps a confluent 5m FVG → price has wicked back into it) is dropping to zero first.
 - All counters healthy but still 0 trades → the bottleneck is the *intersection* of all conditions on the same bar; this is expected for a 6-factor confluence model and may take a longer backtest window (more 1m bars) to produce its first trade.
 
 ## Setup on TradingView
