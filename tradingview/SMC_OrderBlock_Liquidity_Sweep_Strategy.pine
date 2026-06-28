@@ -1,0 +1,395 @@
+//@version=6
+strategy("Smart Money Order Block + Liquidity Sweep Strategy",
+     shorttitle = "SMC-OB-Liquidity-Sweep",
+     overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 10,
+     calc_on_every_tick = true,
+     process_orders_on_close = true)
+
+// =============================================================================
+// MODEL (Smart Money Concepts - liquidity sweep + order block + retest):
+// 1) HTF trend: the most recently closed HTF candle's body is fully above
+//    (bull) or below (bear) the prior HTF candle's body.
+// 2) Liquidity sweep: price wicks beyond a recent swing high/low (stop hunt
+//    of resting liquidity) and closes back inside it - a classic smart-money
+//    reversal signature.
+// 3) Order block: the sweep candle's own range becomes the order block zone
+//    (body to wick), the footprint left behind by the move that grabbed
+//    liquidity.
+// 4) Retest: price must pull back into that order block zone and hold before
+//    entry is taken (optional - can be disabled to enter on the sweep candle
+//    itself).
+// 5) FVG confirmation: an entry-timeframe Fair Value Gap overlapping the
+//    order block zone adds confluence (optional).
+//
+// This is built from the publicly documented Smart Money Concepts / ICT
+// "liquidity sweep + order block" methodology, the same engineering pattern
+// (MTF trend filter, FVG tracking, risk gates, fancy table) used in the other
+// two strategies in this folder. It is NOT derived from any live broker,
+// webhook, or third-party trading account - no such data source is available
+// in this environment.
+//
+// WEBHOOK NOTE: Pine Script cannot call a URL directly - TradingView posts
+// the alert_message JSON below to whatever "Webhook URL" you paste into the
+// alert dialog when you create an alert from this strategy.
+// =============================================================================
+
+// ----------------------------------------------------------------------------
+// INPUTS
+// ----------------------------------------------------------------------------
+grpRules         = "Step 0 - Enable / Disable Rules (for testing)"
+enableHTFTrend   = input.bool(true, "HTF Trend Filter",          tooltip = "Off = ignore the HTF trend direction; long and short both become available regardless of trend.", group = grpRules)
+enableOBRetest   = input.bool(true, "Require Order Block Retest", tooltip = "On = wait for price to pull back into the order block zone before entering. Off = enter immediately on the liquidity-sweep reversal candle.", group = grpRules)
+enableFVGConfirm = input.bool(true, "Require FVG Confluence",     tooltip = "Off = ignore the requirement for an entry-timeframe Fair Value Gap inside the order block zone.", group = grpRules)
+
+grpTrend = "Step 1 - HTF Trend Filter"
+htfTF    = input.timeframe("240", "HTF Trend Timeframe", tooltip = "Timeframe used for the trend candle. Default 240 = 4 hours.", group = grpTrend)
+
+grpSweep         = "Step 2 - Liquidity Sweep"
+sweepLookback    = input.int(20, "Swing High/Low Lookback (bars)", minval = 2, tooltip = "How many bars back to look for the swing high/low that liquidity sweeps beyond.", group = grpSweep)
+sweepBufferTicks = input.float(2, "Min Wick Beyond Level (ticks)", minval = 0, tooltip = "How far beyond the swing level the wick must reach to count as a sweep.", group = grpSweep)
+
+grpOB                  = "Step 3 - Order Block + Retest"
+obValidBars            = input.int(25, "OB Zone Valid For (bars)", minval = 1, tooltip = "How many bars after the sweep the order block zone stays usable for a retest.", group = grpOB)
+obRetestToleranceTicks = input.float(3, "Retest Tolerance Beyond Zone (ticks)", minval = 0, tooltip = "How far price may dip past the order block zone on the retest and still count as holding.", group = grpOB)
+
+grpFVG           = "Step 4 - Fair Value Gap Confirmation"
+fvgTF            = input.timeframe("1", "FVG Timeframe", tooltip = "Timeframe used for FVG detection. Default 1 = 1 minute.", group = grpFVG)
+fvgMaxAge        = input.int(100, "Max FVG Age (bars)", tooltip = "How many bars an FVG stays usable after it forms.", group = grpFVG)
+fvgMaxActive     = input.int(40, "Max Tracked FVGs", tooltip = "How many recent gaps are remembered at once.", group = grpFVG)
+fvgZoneBufferPct = input.float(1.0, "FVG-vs-Zone Overlap Tolerance (x zone size)", minval = 0.0, step = 0.25, tooltip = "Pads the order block zone by this multiple of its own size before checking FVG overlap, so near-misses still count. 0 = exact overlap only.", group = grpFVG)
+
+grpRisk         = "Step 5 - Risk Management (SL / TP)"
+rrMultiple      = input.float(2.0, "Reward : Risk Multiple", step = 0.1, tooltip = "Take-profit distance as a multiple of the stop-loss distance.", group = grpRisk)
+slBufferTicks   = input.float(2, "Extra SL Buffer (ticks beyond OB zone)", tooltip = "Extra cushion added beyond the order block zone when placing the stop-loss.", group = grpRisk)
+useConfirmedBar = input.bool(true, "Only Trigger on Confirmed (Closed) Bar", tooltip = "On = waits for the bar to fully close before triggering (safer, no repaint).", group = grpRisk)
+
+grpWebhook    = "Step 6 - Webhook Alert Payload"
+webhookSymbol = input.string("", "Symbol Override for JSON (blank = chart ticker)", group = grpWebhook)
+qtyForAlert   = input.float(1, "Quantity field to send in JSON", group = grpWebhook)
+
+grpVis         = "Step 7 - Display / Visuals"
+showOBZones    = input.bool(true, "Show Order Block Zones", group = grpVis)
+showSweepMarks = input.bool(true, "Show Liquidity Sweep Markers", group = grpVis)
+showTable      = input.bool(true, "Show Status Table", group = grpVis)
+showTradeBoxes = input.bool(true, "Show Entry/TP/SL Boxes", group = grpVis)
+boxExtendBars  = input.int(30, "Box Min Width (bars)", group = grpVis)
+
+grpLimits = "Step 8 - Session & Risk Limits (Optional, all default Off)"
+enableSessionFilter = input.bool(false, "Session Time Filter", tooltip = "Off = trade any time of day. On = only allow entries inside any session window enabled below.", group = grpLimits)
+sessionTimezone      = input.string("UTC", "Session Timezone (e.g. UTC, America/New_York)", group = grpLimits)
+enableAsiaSession    = input.bool(false, "Asia Session", group = grpLimits)
+asiaSessionInput     = input.session("0000-0900", "Asia Session Hours", group = grpLimits)
+enableLondonSession  = input.bool(false, "London Session", group = grpLimits)
+londonSessionInput   = input.session("0800-1700", "London Session Hours", group = grpLimits)
+enableNYSession      = input.bool(false, "New York Session", group = grpLimits)
+nySessionInput       = input.session("1300-2200", "New York Session Hours", group = grpLimits)
+enableDailyLimit     = input.bool(false, "Daily Trade / Loss Limit", tooltip = "Off = no daily cap. On = blocks new entries once max trades/day or max daily loss % (from equity at day start) is hit.", group = grpLimits)
+maxDailyTrades       = input.int(10, "Max Trades Per Day", minval = 1, group = grpLimits)
+maxDailyLossPct      = input.float(2.0, "Max Daily Loss % (of day-start equity)", minval = 0.1, group = grpLimits)
+enableDrawdownLimit  = input.bool(false, "Max Drawdown Limit", tooltip = "Off = no drawdown cap. On = blocks new entries once drawdown from peak equity exceeds this %.", group = grpLimits)
+maxDrawdownPct       = input.float(20.0, "Max Drawdown % - Stop New Entries", minval = 1.0, group = grpLimits)
+
+// ----------------------------------------------------------------------------
+// 1) HTF TREND FILTER
+// ----------------------------------------------------------------------------
+htf1Open  = request.security(syminfo.tickerid, htfTF, open[1],  lookahead = barmerge.lookahead_off)
+htf1High  = request.security(syminfo.tickerid, htfTF, high[1],  lookahead = barmerge.lookahead_off)
+htf1Low   = request.security(syminfo.tickerid, htfTF, low[1],   lookahead = barmerge.lookahead_off)
+htf1Close = request.security(syminfo.tickerid, htfTF, close[1], lookahead = barmerge.lookahead_off)
+htf2Open  = request.security(syminfo.tickerid, htfTF, open[2],  lookahead = barmerge.lookahead_off)
+htf2Close = request.security(syminfo.tickerid, htfTF, close[2], lookahead = barmerge.lookahead_off)
+
+htf1BodyHigh = math.max(htf1Open, htf1Close)
+htf1BodyLow  = math.min(htf1Open, htf1Close)
+htf2BodyHigh = math.max(htf2Open, htf2Close)
+htf2BodyLow  = math.min(htf2Open, htf2Close)
+
+htfTrendBullish = htf1BodyLow  > htf2BodyHigh
+htfTrendBearish = htf1BodyHigh < htf2BodyLow
+
+// ----------------------------------------------------------------------------
+// 2) LIQUIDITY SWEEP (stop hunt of a recent swing high/low that reverses)
+// ----------------------------------------------------------------------------
+swingLow  = ta.lowest(low,  sweepLookback)[1]
+swingHigh = ta.highest(high, sweepLookback)[1]
+
+sweepLow  = low  < swingLow  - sweepBufferTicks * syminfo.mintick and close > swingLow
+sweepHigh = high > swingHigh + sweepBufferTicks * syminfo.mintick and close < swingHigh
+
+// ----------------------------------------------------------------------------
+// 3) ORDER BLOCK ZONE + RETEST
+// ----------------------------------------------------------------------------
+var float bullOBTop = na
+var float bullOBBot = na
+var int   bullOBBar = na
+var float bearOBTop = na
+var float bearOBBot = na
+var int   bearOBBar = na
+
+if sweepLow
+    bullOBTop := math.max(open, close)
+    bullOBBot := low
+    bullOBBar := bar_index
+
+if sweepHigh
+    bearOBBot := math.min(open, close)
+    bearOBTop := high
+    bearOBBar := bar_index
+
+bullOBActive = not na(bullOBBar) and (bar_index - bullOBBar) <= obValidBars
+bearOBActive = not na(bearOBBar) and (bar_index - bearOBBar) <= obValidBars
+
+bullOBRetestTouch = bullOBActive and low  <= bullOBTop and low  >= bullOBBot - obRetestToleranceTicks * syminfo.mintick and close > bullOBBot
+bearOBRetestTouch = bearOBActive and high >= bearOBBot and high <= bearOBTop + obRetestToleranceTicks * syminfo.mintick and close < bearOBTop
+
+// ----------------------------------------------------------------------------
+// 4) FAIR VALUE GAP CONFIRMATION (entry timeframe)
+// ----------------------------------------------------------------------------
+trackFVG(tf, maxCount, topArr, botArr, bullArr, barArr) =>
+    h1 = request.security(syminfo.tickerid, tf, high[1], lookahead = barmerge.lookahead_off)
+    h3 = request.security(syminfo.tickerid, tf, high[3], lookahead = barmerge.lookahead_off)
+    l1 = request.security(syminfo.tickerid, tf, low[1],  lookahead = barmerge.lookahead_off)
+    l3 = request.security(syminfo.tickerid, tf, low[3],  lookahead = barmerge.lookahead_off)
+    t1 = request.security(syminfo.tickerid, tf, time[1], lookahead = barmerge.lookahead_off)
+
+    var int lastClosedTime = na
+    isNewClose = t1 != lastClosedTime
+
+    bull = l1 > h3
+    bear = h1 < l3
+
+    if isNewClose
+        lastClosedTime := t1
+        if bull
+            array.push(topArr, l1)
+            array.push(botArr, h3)
+            array.push(bullArr, true)
+            array.push(barArr, bar_index)
+        if bear
+            array.push(topArr, l3)
+            array.push(botArr, h1)
+            array.push(bullArr, false)
+            array.push(barArr, bar_index)
+        while array.size(topArr) > maxCount
+            array.shift(topArr)
+            array.shift(botArr)
+            array.shift(bullArr)
+            array.shift(barArr)
+
+var float[] fvgTop  = array.new<float>()
+var float[] fvgBot  = array.new<float>()
+var bool[]  fvgBull = array.new<bool>()
+var int[]   fvgBar  = array.new<int>()
+
+trackFVG(fvgTF, fvgMaxActive, fvgTop, fvgBot, fvgBull, fvgBar)
+
+findFVGInZone(isBull, zoneLow, zoneHigh) =>
+    found = false
+
+    n = array.size(fvgTop)
+    if n > 0
+        for i = 0 to n - 1
+            if array.get(fvgBull, i) == isBull and (bar_index - array.get(fvgBar, i)) <= fvgMaxAge
+                t1 = array.get(fvgTop, i)
+                b1 = array.get(fvgBot, i)
+                pad = (zoneHigh - zoneLow) * fvgZoneBufferPct
+                overlap = math.max(b1, zoneLow - pad) <= math.min(t1, zoneHigh + pad)
+                if overlap
+                    found := true
+    found
+
+bullFVGFound = findFVGInZone(true,  nz(bullOBBot), nz(bullOBTop))
+bearFVGFound = findFVGInZone(false, nz(bearOBBot), nz(bearOBTop))
+
+// ----------------------------------------------------------------------------
+// 4B) SESSION & RISK LIMITS (Step 8 inputs - all default Off, so existing
+//     behavior is unaffected unless one is switched on)
+// ----------------------------------------------------------------------------
+inAsiaSession     = enableAsiaSession   and not na(time(timeframe.period, asiaSessionInput,   sessionTimezone))
+inLondonSession   = enableLondonSession and not na(time(timeframe.period, londonSessionInput, sessionTimezone))
+inNYSession       = enableNYSession     and not na(time(timeframe.period, nySessionInput,     sessionTimezone))
+anySessionEnabled = enableAsiaSession or enableLondonSession or enableNYSession
+inSession = not enableSessionFilter or not anySessionEnabled or inAsiaSession or inLondonSession or inNYSession
+
+newDay = ta.change(dayofmonth(time)) != 0
+var float dayStartEquity = strategy.initial_capital
+var int   dayTradeCount  = 0
+if newDay
+    dayStartEquity := strategy.equity
+    dayTradeCount  := 0
+
+dailyLossPct = dayStartEquity > 0 ? (dayStartEquity - strategy.equity) / dayStartEquity * 100.0 : 0.0
+dailyLimitOk = not enableDailyLimit or (dayTradeCount < maxDailyTrades and dailyLossPct < maxDailyLossPct)
+
+var float peakEquity = strategy.initial_capital
+peakEquity := math.max(peakEquity, strategy.equity)
+drawdownPct = peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100.0 : 0.0
+drawdownOk = not enableDrawdownLimit or drawdownPct < maxDrawdownPct
+
+riskGateOk = inSession and dailyLimitOk and drawdownOk
+
+// ----------------------------------------------------------------------------
+// 5) ENTRY SIGNAL
+// ----------------------------------------------------------------------------
+barGate = useConfirmedBar ? barstate.isconfirmed : true
+
+longTrigger  = enableOBRetest ? bullOBRetestTouch : sweepLow
+shortTrigger = enableOBRetest ? bearOBRetestTouch : sweepHigh
+
+longSignal  = (not enableHTFTrend or htfTrendBullish) and longTrigger  and (not enableFVGConfirm or bullFVGFound) and barGate and riskGateOk and strategy.position_size <= 0
+shortSignal = (not enableHTFTrend or htfTrendBearish) and shortTrigger and (not enableFVGConfirm or bearFVGFound) and barGate and riskGateOk and strategy.position_size >= 0
+
+// ----------------------------------------------------------------------------
+// 6) RISK MANAGEMENT + WEBHOOK ALERT PAYLOADS
+// ----------------------------------------------------------------------------
+webhookSymbolStr = webhookSymbol == "" ? syminfo.ticker : webhookSymbol
+
+var box   profitBox  = na
+var box   riskBox    = na
+var label entryLabel = na
+
+drawTradeVisuals(isLong, entryPrice, sl, tp) =>
+    box.delete(profitBox)
+    box.delete(riskBox)
+    label.delete(entryLabel)
+    rightBar     = bar_index + boxExtendBars
+    profitTop    = isLong ? tp : entryPrice
+    profitBottom = isLong ? entryPrice : tp
+    riskTop      = isLong ? entryPrice : sl
+    riskBottom   = isLong ? sl : entryPrice
+    newProfitBox = box.new(bar_index, profitTop, rightBar, profitBottom, border_color = color.green, bgcolor = color.new(color.green, 85))
+    newRiskBox   = box.new(bar_index, riskTop, rightBar, riskBottom, border_color = color.red, bgcolor = color.new(color.red, 85))
+    newLabel     = label.new(bar_index, isLong ? entryPrice - (tp - entryPrice) * 0.1 : entryPrice + (entryPrice - tp) * 0.1,
+         isLong ? "BUY" : "SELL",
+         style = isLong ? label.style_label_up : label.style_label_down,
+         color = isLong ? color.green : color.red, textcolor = color.white, size = size.small)
+    [newProfitBox, newRiskBox, newLabel]
+
+if longSignal
+    slPrice = bullOBBot - slBufferTicks * syminfo.mintick
+    risk    = close - slPrice
+    tpPrice = close + risk * rrMultiple
+    longMsg = "{\"action\":\"buy\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"long\",\"price\":" + str.tostring(close) + ",\"sl\":" + str.tostring(slPrice) + ",\"tp\":" + str.tostring(tpPrice) + ",\"qty\":" + str.tostring(qtyForAlert) + ",\"strategy\":\"SMC-OB-Liquidity-Sweep\",\"time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ") + "\"}"
+    exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"long\",\"strategy\":\"SMC-OB-Liquidity-Sweep\"}"
+    strategy.entry("Long", strategy.long, alert_message = longMsg)
+    strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+    dayTradeCount := dayTradeCount + 1
+    if showTradeBoxes
+        [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice)
+        profitBox  := pb
+        riskBox    := rb
+        entryLabel := el
+    else
+        label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.green, textcolor = color.white, size = size.small)
+
+if shortSignal
+    slPrice = bearOBTop + slBufferTicks * syminfo.mintick
+    risk    = slPrice - close
+    tpPrice = close - risk * rrMultiple
+    shortMsg = "{\"action\":\"sell\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"short\",\"price\":" + str.tostring(close) + ",\"sl\":" + str.tostring(slPrice) + ",\"tp\":" + str.tostring(tpPrice) + ",\"qty\":" + str.tostring(qtyForAlert) + ",\"strategy\":\"SMC-OB-Liquidity-Sweep\",\"time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ") + "\"}"
+    exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"short\",\"strategy\":\"SMC-OB-Liquidity-Sweep\"}"
+    strategy.entry("Short", strategy.short, alert_message = shortMsg)
+    strategy.exit("Short Exit", from_entry = "Short", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+    dayTradeCount := dayTradeCount + 1
+    if showTradeBoxes
+        [pb, rb, el] = drawTradeVisuals(false, close, slPrice, tpPrice)
+        profitBox  := pb
+        riskBox    := rb
+        entryLabel := el
+    else
+        label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.red, textcolor = color.white, size = size.small)
+
+if showTradeBoxes and strategy.position_size != 0 and not na(profitBox)
+    box.set_right(profitBox, math.max(bar_index, box.get_right(profitBox)))
+    box.set_right(riskBox, math.max(bar_index, box.get_right(riskBox)))
+
+// ----------------------------------------------------------------------------
+// 7) VISUALS + DIAGNOSTICS
+// ----------------------------------------------------------------------------
+var box bullOBBox = na
+var box bearOBBox = na
+
+if showOBZones
+    if sweepLow
+        box.delete(bullOBBox)
+        bullOBBox := box.new(bar_index, bullOBTop, bar_index + obValidBars, bullOBBot, border_color = color.blue, bgcolor = color.new(color.blue, 88))
+    if sweepHigh
+        box.delete(bearOBBox)
+        bearOBBox := box.new(bar_index, bearOBTop, bar_index + obValidBars, bearOBBot, border_color = color.purple, bgcolor = color.new(color.purple, 88))
+
+plotshape(showSweepMarks and sweepLow  ? low  : na, "Liquidity Sweep Low",  style = shape.triangleup,   location = location.belowbar, color = color.blue,   size = size.tiny)
+plotshape(showSweepMarks and sweepHigh ? high : na, "Liquidity Sweep High", style = shape.triangledown, location = location.abovebar, color = color.purple, size = size.tiny)
+
+winTrades   = strategy.wintrades
+lossTrades  = strategy.losstrades
+totalClosed = strategy.closedtrades
+winPct = totalClosed > 0 ? (winTrades / totalClosed) * 100.0 : 0.0
+
+currentDateStr = str.format_time(time, "yyyy-MM-dd")
+var string lastDateStr     = na
+var int    dailyWin        = 0
+var int    dailyLoss       = 0
+var int    prevClosedCount = 0
+if na(lastDateStr) or currentDateStr != lastDateStr
+    dailyWin    := 0
+    dailyLoss   := 0
+    lastDateStr := currentDateStr
+
+if totalClosed > prevClosedCount
+    lastTradeProfit = strategy.closedtrades.profit(totalClosed - 1)
+    if lastTradeProfit > 0
+        dailyWin := dailyWin + 1
+    else
+        dailyLoss := dailyLoss + 1
+    prevClosedCount := totalClosed
+
+var int liquiditySweepCount = 0
+if sweepLow or sweepHigh
+    liquiditySweepCount := liquiditySweepCount + 1
+
+var int obRetestCount = 0
+if bullOBRetestTouch or bearOBRetestTouch
+    obRetestCount := obRetestCount + 1
+
+var int fvgConfluenceCount = 0
+if (bullOBActive and bullFVGFound) or (bearOBActive and bearFVGFound)
+    fvgConfluenceCount := fvgConfluenceCount + 1
+
+titleBg     = color.rgb(20, 22, 38)
+titleText   = color.rgb(255, 205, 60)
+labelBg     = color.rgb(32, 35, 52)
+labelText   = color.rgb(190, 198, 220)
+neutralBg   = color.rgb(45, 50, 75)
+winRateBg   = color.rgb(10, 95, 145)
+winBg       = color.rgb(15, 120, 80)
+lossBg      = color.rgb(160, 35, 45)
+dailyWinBg  = color.rgb(25, 150, 100)
+dailyLossBg = color.rgb(190, 60, 60)
+drawdownBg  = color.rgb(195, 120, 15)
+
+if showTable
+    var table statusTbl = table.new(position.top_right, 2, 10, border_width = 2, border_color = color.rgb(255, 205, 60))
+    if barstate.islast
+        table.cell(statusTbl, 0, 0, "STRATEGY STATS", bgcolor = titleBg, text_color = titleText, text_size = size.normal)
+        table.cell(statusTbl, 1, 0, "", bgcolor = titleBg)
+        table.cell(statusTbl, 0, 1, "Win Rate", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 1, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = winRateBg)
+        table.cell(statusTbl, 0, 2, "Win", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 2, str.tostring(winTrades), text_color = color.white, bgcolor = winBg)
+        table.cell(statusTbl, 0, 3, "Loss", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 3, str.tostring(lossTrades), text_color = color.white, bgcolor = lossBg)
+        table.cell(statusTbl, 0, 4, "Daily Win", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 4, str.tostring(dailyWin), text_color = color.white, bgcolor = dailyWinBg)
+        table.cell(statusTbl, 0, 5, "Daily Loss", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 5, str.tostring(dailyLoss), text_color = color.white, bgcolor = dailyLossBg)
+        table.cell(statusTbl, 0, 6, "Drawdown", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 6, str.tostring(drawdownPct, "#.##") + "%", text_color = color.white, bgcolor = drawdownBg)
+        table.cell(statusTbl, 0, 7, "Liquidity Sweeps", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 7, str.tostring(liquiditySweepCount), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 8, "OB Retests", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 8, str.tostring(obRetestCount), text_color = color.white, bgcolor = neutralBg)
+        table.cell(statusTbl, 0, 9, "FVG Confluences", bgcolor = labelBg, text_color = labelText)
+        table.cell(statusTbl, 1, 9, str.tostring(fvgConfluenceCount), text_color = color.white, bgcolor = neutralBg)
