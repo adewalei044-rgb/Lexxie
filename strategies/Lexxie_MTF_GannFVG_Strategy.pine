@@ -1,0 +1,250 @@
+//@version=6
+// ============================================================================
+//  LEXXIE  —  Multi-Timeframe Gann + FVG Stop-Hunt Strategy
+// ----------------------------------------------------------------------------
+//  Run this strategy on the 1-MINUTE chart. All higher timeframes (5m / 1H / 4H)
+//  are pulled in via request.security so you only need one chart open.
+//
+//  STRATEGY LOGIC (as specified):
+//    1. TREND  — 200 MA on the 4H timeframe defines bias (bullish / bearish).
+//    2. 1H STRUCTURE — on a 1H candle that closes in the direction of the 4H
+//       trend, require the candle BODY to close beyond the previous candle's
+//       body (momentum / displacement candle).
+//    3. GANN BOX — measure the qualifying 1H candle from wick-low to wick-high.
+//          • LONG  entry zone = 0.50 – 0.75 retracement
+//          • SHORT entry zone = 0.24 – 0.50 retracement
+//    4. 1m ENTRY — on the 1-minute timeframe look for a STOP HUNT (liquidity
+//       sweep) + a Fair Value Gap (FVG). The 1m FVG must be in CONFLUENCE with
+//       a 5m FVG. On the retracement back into the FVG, a REJECTION candle
+//       inside the gap triggers the trade.
+//
+//  WEBHOOK:  alerts fire a JSON payload (alert_message) ready for any webhook
+//  receiver (3Commas, your own bot, etc.). Paste your webhook URL into the
+//  TradingView alert dialog — see strategies/README.md for full instructions.
+// ============================================================================
+
+strategy(
+     title              = "Lexxie MTF Gann + FVG Stop-Hunt",
+     shorttitle         = "Lexxie MTF",
+     overlay            = true,
+     pyramiding         = 0,
+     initial_capital    = 10000,
+     default_qty_type   = strategy.percent_of_equity,
+     default_qty_value  = 10,
+     commission_type    = strategy.commission.percent,
+     commission_value   = 0.04,
+     calc_on_every_tick = false,
+     process_orders_on_close = true)
+
+// ============================================================================
+//  INPUTS
+// ============================================================================
+grpTrend  = "1 ── Trend (4H)"
+maLen     = input.int(200,   "200 MA length",                 group = grpTrend, minval = 1)
+maType    = input.string("SMA", "MA type", options = ["SMA", "EMA"], group = grpTrend)
+htfTrendTF= input.timeframe("240", "Trend timeframe (4H)",    group = grpTrend)
+
+grpH1     = "2 ── 1H Structure"
+h1TF      = input.timeframe("60", "Structure timeframe (1H)", group = grpH1)
+reqBodyBreak = input.bool(true, "Require body to close beyond previous candle body", group = grpH1)
+
+grpGann   = "3 ── Gann Box (retracement on 1H candle)"
+longHi    = input.float(0.75, "Long zone — upper",  group = grpGann, minval = 0, maxval = 1, step = 0.01)
+longLo    = input.float(0.50, "Long zone — lower",  group = grpGann, minval = 0, maxval = 1, step = 0.01)
+shortHi   = input.float(0.50, "Short zone — upper", group = grpGann, minval = 0, maxval = 1, step = 0.01)
+shortLo   = input.float(0.24, "Short zone — lower", group = grpGann, minval = 0, maxval = 1, step = 0.01)
+
+grpFVG    = "4 ── 1m Entry (Stop hunt + FVG)"
+confTF    = input.timeframe("5", "FVG confluence timeframe (5m)", group = grpFVG)
+sweepLook = input.int(10, "Stop-hunt lookback (bars)", group = grpFVG, minval = 2)
+fvgLook   = input.int(30, "FVG validity (bars kept active)", group = grpFVG, minval = 1)
+
+grpRisk   = "5 ── Risk Management"
+useSL     = input.bool(true,  "Use stop loss",        group = grpRisk)
+useTP     = input.bool(true,  "Use take profit",      group = grpRisk)
+slPerc    = input.float(0.5,  "Stop loss (%)",   group = grpRisk, minval = 0.0, step = 0.1)
+rrRatio   = input.float(3.0,  "Risk : Reward (1:3)",   group = grpRisk, minval = 0.1, step = 0.1)
+
+grpHook   = "6 ── Webhook"
+hookTicker= input.string("{{ticker}}", "Symbol field in payload", group = grpHook)
+
+// ============================================================================
+//  1) 4H TREND  —  200 MA
+// ============================================================================
+f_ma(src, len) => maType == "EMA" ? ta.ema(src, len) : ta.sma(src, len)
+
+htfMA   = request.security(syminfo.tickerid, htfTrendTF, f_ma(close, maLen),
+              lookahead = barmerge.lookahead_off)
+htfClose= request.security(syminfo.tickerid, htfTrendTF, close,
+              lookahead = barmerge.lookahead_off)
+
+bullTrend = htfClose > htfMA
+bearTrend = htfClose < htfMA
+
+// ============================================================================
+//  2) 1H STRUCTURE  —  displacement candle in the direction of the trend
+// ============================================================================
+// Pull the last CLOSED 1H candle's OHLC.
+h1Open  = request.security(syminfo.tickerid, h1TF, open[1],  lookahead = barmerge.lookahead_off)
+h1High  = request.security(syminfo.tickerid, h1TF, high[1],  lookahead = barmerge.lookahead_off)
+h1Low   = request.security(syminfo.tickerid, h1TF, low[1],   lookahead = barmerge.lookahead_off)
+h1Close = request.security(syminfo.tickerid, h1TF, close[1], lookahead = barmerge.lookahead_off)
+// previous (one before that) 1H candle's body, for the "body above previous" check
+h1OpenP = request.security(syminfo.tickerid, h1TF, open[2],  lookahead = barmerge.lookahead_off)
+h1CloseP= request.security(syminfo.tickerid, h1TF, close[2], lookahead = barmerge.lookahead_off)
+
+h1Bull  = h1Close > h1Open
+h1Bear  = h1Close < h1Open
+
+prevBodyHigh = math.max(h1OpenP, h1CloseP)
+prevBodyLow  = math.min(h1OpenP, h1CloseP)
+
+// body closes beyond the previous candle's body (displacement)
+bodyBreakUp   = h1Close > prevBodyHigh
+bodyBreakDown = h1Close < prevBodyLow
+
+longStructure  = bullTrend and h1Bull and (not reqBodyBreak or bodyBreakUp)
+shortStructure = bearTrend and h1Bear and (not reqBodyBreak or bodyBreakDown)
+
+// ============================================================================
+//  3) GANN BOX  —  retracement zone of the qualifying 1H candle (wick to wick)
+// ============================================================================
+h1Range = h1High - h1Low
+// Levels measured 0.0 = wick low  →  1.0 = wick high
+longZoneUpper  = h1Low + longHi  * h1Range
+longZoneLower  = h1Low + longLo  * h1Range
+shortZoneUpper = h1Low + shortHi * h1Range
+shortZoneLower = h1Low + shortLo * h1Range
+
+inLongZone  = close <= longZoneUpper  and close >= longZoneLower
+inShortZone = close <= shortZoneUpper and close >= shortZoneLower
+
+// ============================================================================
+//  4) 1m ENTRY  —  stop hunt + FVG (with 5m confluence) + rejection
+// ============================================================================
+// --- Fair Value Gaps on the chart (1m) ---
+// Bullish FVG: gap between candle[2].high and candle[0].low  (imbalance up)
+// Bearish FVG: gap between candle[2].low  and candle[0].high (imbalance down)
+bullFVG_1m = low > high[2]
+bearFVG_1m = high < low[2]
+
+var float bullFvgTop = na
+var float bullFvgBot = na
+var int   bullFvgBar = na
+var float bearFvgTop = na
+var float bearFvgBot = na
+var int   bearFvgBar = na
+
+if bullFVG_1m
+    bullFvgTop := low
+    bullFvgBot := high[2]
+    bullFvgBar := bar_index
+if bearFVG_1m
+    bearFvgTop := low[2]
+    bearFvgBot := high
+    bearFvgBar := bar_index
+
+bullFvgActive = not na(bullFvgBar) and (bar_index - bullFvgBar) <= fvgLook
+bearFvgActive = not na(bearFvgBar) and (bar_index - bearFvgBar) <= fvgLook
+
+// --- 5m FVG (confluence) ---
+hi5   = request.security(syminfo.tickerid, confTF, high, lookahead = barmerge.lookahead_off)
+lo5   = request.security(syminfo.tickerid, confTF, low,  lookahead = barmerge.lookahead_off)
+hi5_2 = request.security(syminfo.tickerid, confTF, high[2], lookahead = barmerge.lookahead_off)
+lo5_2 = request.security(syminfo.tickerid, confTF, low[2],  lookahead = barmerge.lookahead_off)
+bullFVG_5m = lo5 > hi5_2
+bearFVG_5m = hi5 < lo5_2
+
+var float bull5Top = na
+var float bull5Bot = na
+var float bear5Top = na
+var float bear5Bot = na
+if bullFVG_5m
+    bull5Top := lo5
+    bull5Bot := hi5_2
+if bearFVG_5m
+    bear5Top := lo5_2
+    bear5Bot := hi5
+
+// confluence = the two gaps overlap in price
+f_overlap(aTop, aBot, bTop, bBot) =>
+    not na(aTop) and not na(bTop) and math.min(aTop, bTop) >= math.max(aBot, bBot)
+
+bullConfluence = bullFvgActive and f_overlap(bullFvgTop, bullFvgBot, bull5Top, bull5Bot)
+bearConfluence = bearFvgActive and f_overlap(bearFvgTop, bearFvgBot, bear5Top, bear5Bot)
+
+// --- Stop hunt (liquidity sweep of recent extreme, then reclaim) ---
+priorLow  = ta.lowest(low,  sweepLook)[1]
+priorHigh = ta.highest(high, sweepLook)[1]
+stopHuntLong  = low  < priorLow  and close > priorLow      // swept lows, closed back above
+stopHuntShort = high > priorHigh and close < priorHigh     // swept highs, closed back below
+
+// --- Rejection candle INSIDE the FVG on the retracement ---
+candleBody  = math.abs(close - open)
+lowerWick   = math.min(open, close) - low
+upperWick   = high - math.max(open, close)
+bullReject  = close > open and lowerWick > candleBody and low <= bullFvgTop and low >= bullFvgBot
+bearReject  = close < open and upperWick > candleBody and high >= bearFvgBot and high <= bearFvgTop
+
+// ============================================================================
+//  FINAL ENTRY CONDITIONS  (all confluence stacked)
+// ============================================================================
+longSignal  = longStructure  and inLongZone  and bullConfluence and stopHuntLong  and bullReject
+shortSignal = shortStructure and inShortZone and bearConfluence and stopHuntShort and bearReject
+
+// ============================================================================
+//  RISK MANAGEMENT
+// ============================================================================
+longSL  = close * (1 - slPerc / 100)
+longTP  = close * (1 + (slPerc * rrRatio) / 100)
+shortSL = close * (1 + slPerc / 100)
+shortTP = close * (1 - (slPerc * rrRatio) / 100)
+
+// ============================================================================
+//  WEBHOOK PAYLOADS  (JSON via {{strategy.order.alert_message}})
+// ============================================================================
+longMsg  = '{"action":"buy","symbol":"'  + hookTicker + '","price":"{{close}}","tf":"{{interval}}","time":"{{timenow}}","strategy":"Lexxie_MTF","sl":"'  + str.tostring(longSL,  format.mintick) + '","tp":"' + str.tostring(longTP,  format.mintick) + '"}'
+shortMsg = '{"action":"sell","symbol":"' + hookTicker + '","price":"{{close}}","tf":"{{interval}}","time":"{{timenow}}","strategy":"Lexxie_MTF","sl":"' + str.tostring(shortSL, format.mintick) + '","tp":"' + str.tostring(shortTP, format.mintick) + '"}'
+exitMsg  = '{"action":"close","symbol":"' + hookTicker + '","price":"{{close}}","tf":"{{interval}}","time":"{{timenow}}","strategy":"Lexxie_MTF"}'
+
+// ============================================================================
+//  ORDERS
+// ============================================================================
+if longSignal and strategy.position_size <= 0
+    strategy.entry("Long", strategy.long, alert_message = longMsg)
+    if useSL or useTP
+        strategy.exit("Long-X", from_entry = "Long",
+             stop  = useSL ? longSL : na,
+             limit = useTP ? longTP : na,
+             alert_message = exitMsg)
+
+if shortSignal and strategy.position_size >= 0
+    strategy.entry("Short", strategy.short, alert_message = shortMsg)
+    if useSL or useTP
+        strategy.exit("Short-X", from_entry = "Short",
+             stop  = useSL ? shortSL : na,
+             limit = useTP ? shortTP : na,
+             alert_message = exitMsg)
+
+// ============================================================================
+//  ALERT CONDITIONS  (for non-strategy webhook routing if preferred)
+// ============================================================================
+alertcondition(longSignal,  title = "Lexxie LONG",  message = "Lexxie LONG signal")
+alertcondition(shortSignal, title = "Lexxie SHORT", message = "Lexxie SHORT signal")
+
+// ============================================================================
+//  VISUALS
+// ============================================================================
+plot(htfMA, "4H 200 MA", color = bullTrend ? color.new(color.lime, 0) : color.new(color.red, 0), linewidth = 2)
+
+bgcolor(longStructure  ? color.new(color.green, 92) : na, title = "1H long structure")
+bgcolor(shortStructure ? color.new(color.red,   92) : na, title = "1H short structure")
+
+plotshape(longSignal,  title = "Long Entry",  style = shape.triangleup,   location = location.belowbar, color = color.lime, size = size.small)
+plotshape(shortSignal, title = "Short Entry", style = shape.triangledown, location = location.abovebar, color = color.red,  size = size.small)
+
+// Gann zone bands (plotted from the active 1H candle)
+plot(inLongZone  ? longZoneUpper  : na, "Long zone upper",  color = color.new(color.green, 40), style = plot.style_linebr)
+plot(inLongZone  ? longZoneLower  : na, "Long zone lower",  color = color.new(color.green, 40), style = plot.style_linebr)
+plot(inShortZone ? shortZoneUpper : na, "Short zone upper", color = color.new(color.red,   40), style = plot.style_linebr)
+plot(inShortZone ? shortZoneLower : na, "Short zone lower", color = color.new(color.red,   40), style = plot.style_linebr)
