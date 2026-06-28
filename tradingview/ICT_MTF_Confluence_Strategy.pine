@@ -306,8 +306,15 @@ lossTrades = strategy.losstrades
 totalClosed = strategy.closedtrades
 winPct = totalClosed > 0 ? (winTrades / totalClosed) * 100.0 : 0.0
 
+var float peakEquity     = strategy.initial_capital
+var float maxDrawdownVal = 0.0
+peakEquity := math.max(peakEquity, strategy.equity)
+currentDrawdown = peakEquity - strategy.equity
+maxDrawdownVal := math.max(maxDrawdownVal, currentDrawdown)
+maxDrawdownPct = peakEquity > 0 ? (maxDrawdownVal / peakEquity) * 100.0 : 0.0
+
 if showTable
-    var table statusTbl = table.new(position.top_right, 2, 10, border_width = 1)
+    var table statusTbl = table.new(position.top_right, 2, 11, border_width = 1)
     if barstate.islast
         table.cell(statusTbl, 0, 0, "4H Trend",     bgcolor = color.gray, text_color = color.white)
         table.cell(statusTbl, 1, 0, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? color.green : trendBearish ? color.red : color.gray, text_color = color.white)
@@ -329,3 +336,5 @@ if showTable
         table.cell(statusTbl, 1, 8, str.tostring(lossTrades), text_color = color.white, bgcolor = color.new(color.red, 60))
         table.cell(statusTbl, 0, 9, "Win %",         bgcolor = color.gray, text_color = color.white)
         table.cell(statusTbl, 1, 9, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
+        table.cell(statusTbl, 0, 10, "Max Drawdown", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 10, str.tostring(maxDrawdownPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.orange, 60))
