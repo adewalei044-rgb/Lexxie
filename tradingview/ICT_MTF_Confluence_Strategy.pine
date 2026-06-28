@@ -302,11 +302,8 @@ if longSignal
     slPrice = slRefLong - slBufferTicks * syminfo.mintick
     risk    = close - slPrice
     tpPrice = close + risk * rrMultiple
-    longMsg = str.format(
-         '{{"action":"buy","symbol":"{0}","side":"long","price":{1},"sl":{2},"tp":{3},"qty":{4},"strategy":"ICT-MTF-Confluence","time":"{5}"}}',
-         webhookSymbolStr, close, slPrice, tpPrice, qtyForAlert, str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ"))
-    exitMsg = str.format(
-         '{{"action":"close","symbol":"{0}","side":"long","strategy":"ICT-MTF-Confluence"}}', webhookSymbolStr)
+    longMsg = "{\"action\":\"buy\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"long\",\"price\":" + str.tostring(close) + ",\"sl\":" + str.tostring(slPrice) + ",\"tp\":" + str.tostring(tpPrice) + ",\"qty\":" + str.tostring(qtyForAlert) + ",\"strategy\":\"ICT-MTF-Confluence\",\"time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ") + "\"}"
+    exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"long\",\"strategy\":\"ICT-MTF-Confluence\"}"
     strategy.entry("Long", strategy.long, alert_message = longMsg)
     strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
     if showTradeBoxes
@@ -323,11 +320,8 @@ if shortSignal
     slPrice = slRefShort + slBufferTicks * syminfo.mintick
     risk    = slPrice - close
     tpPrice = close - risk * rrMultiple
-    shortMsg = str.format(
-         '{{"action":"sell","symbol":"{0}","side":"short","price":{1},"sl":{2},"tp":{3},"qty":{4},"strategy":"ICT-MTF-Confluence","time":"{5}"}}',
-         webhookSymbolStr, close, slPrice, tpPrice, qtyForAlert, str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ"))
-    exitMsg = str.format(
-         '{{"action":"close","symbol":"{0}","side":"short","strategy":"ICT-MTF-Confluence"}}', webhookSymbolStr)
+    shortMsg = "{\"action\":\"sell\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"short\",\"price\":" + str.tostring(close) + ",\"sl\":" + str.tostring(slPrice) + ",\"tp\":" + str.tostring(tpPrice) + ",\"qty\":" + str.tostring(qtyForAlert) + ",\"strategy\":\"ICT-MTF-Confluence\",\"time\":\"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ") + "\"}"
+    exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"short\",\"strategy\":\"ICT-MTF-Confluence\"}"
     strategy.entry("Short", strategy.short, alert_message = shortMsg)
     strategy.exit("Short Exit", from_entry = "Short", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
     if showTradeBoxes
