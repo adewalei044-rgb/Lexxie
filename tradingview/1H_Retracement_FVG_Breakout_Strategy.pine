@@ -76,7 +76,7 @@ enableSessionFilter = input.bool(false, "Session Time Filter", tooltip = "Off = 
 sessionInput         = input.session("0700-1700", "Trading Session", group = grpLimits)
 sessionTimezone       = input.string("UTC", "Session Timezone (e.g. UTC, America/New_York)", group = grpLimits)
 enableDailyLimit     = input.bool(false, "Daily Trade / Loss Limit", tooltip = "Off = no daily cap. On = blocks new entries once max trades/day or max daily loss % (from equity at day start) is hit.", group = grpLimits)
-maxDailyTrades       = input.int(5, "Max Trades Per Day", minval = 1, group = grpLimits)
+maxDailyTrades       = input.int(10, "Max Trades Per Day", minval = 1, group = grpLimits)
 maxDailyLossPct      = input.float(2.0, "Max Daily Loss % (of day-start equity)", minval = 0.1, group = grpLimits)
 enableDrawdownLimit  = input.bool(false, "Max Drawdown Limit", tooltip = "Off = no drawdown cap. On = blocks new entries once drawdown from peak equity exceeds this %.", group = grpLimits)
 maxDrawdownPct       = input.float(20.0, "Max Drawdown % - Stop New Entries", minval = 1.0, group = grpLimits)
