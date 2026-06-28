@@ -295,7 +295,11 @@ drawTradeVisuals(isLong, entryPrice, sl, tp) =>
     [newProfitBox, newRiskBox, newLabel]
 
 if longSignal
-    slPrice = lastLongHuntLow - slBufferTicks * syminfo.mintick
+    // When "1m Stop Hunt" (Step 0) is off, a signal can fire with no actual
+    // hunt ever recorded, leaving lastLongHuntLow na — fall back to the
+    // recent swing low so the SL is never computed from na.
+    slRefLong = na(lastLongHuntLow) ? swingLow : lastLongHuntLow
+    slPrice = slRefLong - slBufferTicks * syminfo.mintick
     risk    = close - slPrice
     tpPrice = close + risk * rrMultiple
     longMsg = str.format(
@@ -314,7 +318,9 @@ if longSignal
         label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.green, textcolor = color.white, size = size.small)
 
 if shortSignal
-    slPrice = lastShortHuntHigh + slBufferTicks * syminfo.mintick
+    // Same na fallback as the long side, for when Stop Hunt is off.
+    slRefShort = na(lastShortHuntHigh) ? swingHigh : lastShortHuntHigh
+    slPrice = slRefShort + slBufferTicks * syminfo.mintick
     risk    = slPrice - close
     tpPrice = close - risk * rrMultiple
     shortMsg = str.format(
