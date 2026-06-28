@@ -323,6 +323,9 @@ if showOBZones
 plotshape(showSweepMarks and sweepLow  ? low  : na, "Liquidity Sweep Low",  style = shape.triangleup,   location = location.belowbar, color = color.blue,   size = size.tiny)
 plotshape(showSweepMarks and sweepHigh ? high : na, "Liquidity Sweep High", style = shape.triangledown, location = location.abovebar, color = color.purple, size = size.tiny)
 
+plotshape(longSignal  ? low  : na, "Buy Entry Logo",  style = shape.triangleup,   location = location.belowbar, color = color.lime, size = size.small, text = "BUY",  textcolor = color.lime)
+plotshape(shortSignal ? high : na, "Sell Entry Logo", style = shape.triangledown, location = location.abovebar, color = color.red,  size = size.small, text = "SELL", textcolor = color.red)
+
 winTrades   = strategy.wintrades
 lossTrades  = strategy.losstrades
 totalClosed = strategy.closedtrades
