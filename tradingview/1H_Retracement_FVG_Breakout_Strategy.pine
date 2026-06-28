@@ -71,6 +71,16 @@ showTable      = input.bool(true, "Show Status Table", group = grpVis)
 showTradeBoxes = input.bool(true, "Show Entry/TP/SL Boxes", group = grpVis)
 boxExtendBars  = input.int(30, "Box Min Width (bars)", group = grpVis)
 
+grpLimits = "Step 8 - Session & Risk Limits (Optional, all default Off)"
+enableSessionFilter = input.bool(false, "Session Time Filter", tooltip = "Off = trade any time of day. On = only allow entries inside the session window below.", group = grpLimits)
+sessionInput         = input.session("0700-1700", "Trading Session", group = grpLimits)
+sessionTimezone       = input.string("UTC", "Session Timezone (e.g. UTC, America/New_York)", group = grpLimits)
+enableDailyLimit     = input.bool(false, "Daily Trade / Loss Limit", tooltip = "Off = no daily cap. On = blocks new entries once max trades/day or max daily loss % (from equity at day start) is hit.", group = grpLimits)
+maxDailyTrades       = input.int(5, "Max Trades Per Day", minval = 1, group = grpLimits)
+maxDailyLossPct      = input.float(3.0, "Max Daily Loss % (of day-start equity)", minval = 0.1, group = grpLimits)
+enableDrawdownLimit  = input.bool(false, "Max Drawdown Limit", tooltip = "Off = no drawdown cap. On = blocks new entries once drawdown from peak equity exceeds this %.", group = grpLimits)
+maxDrawdownPct       = input.float(20.0, "Max Drawdown % - Stop New Entries", minval = 1.0, group = grpLimits)
+
 // ----------------------------------------------------------------------------
 // 1) 1H TREND FILTER
 // ----------------------------------------------------------------------------
@@ -197,12 +207,35 @@ retestLongTouch  = retestLongActive  and low  <= lastBreakoutHighLevel + retestT
 retestShortTouch = retestShortActive and high >= lastBreakoutLowLevel  - retestToleranceTicks * syminfo.mintick and close < lastBreakoutLowLevel
 
 // ----------------------------------------------------------------------------
+// 4B) SESSION & RISK LIMITS (Step 8 inputs — all default Off, so existing
+//     behavior is unaffected unless one is switched on)
+// ----------------------------------------------------------------------------
+inSession = not enableSessionFilter or not na(time(timeframe.period, sessionInput, sessionTimezone))
+
+newDay = ta.change(dayofmonth(time)) != 0
+var float dayStartEquity = strategy.initial_capital
+var int   dayTradeCount  = 0
+if newDay
+    dayStartEquity := strategy.equity
+    dayTradeCount  := 0
+
+dailyLossPct = dayStartEquity > 0 ? (dayStartEquity - strategy.equity) / dayStartEquity * 100.0 : 0.0
+dailyLimitOk = not enableDailyLimit or (dayTradeCount < maxDailyTrades and dailyLossPct < maxDailyLossPct)
+
+var float peakEquity = strategy.initial_capital
+peakEquity := math.max(peakEquity, strategy.equity)
+drawdownPct = peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100.0 : 0.0
+drawdownOk = not enableDrawdownLimit or drawdownPct < maxDrawdownPct
+
+riskGateOk = inSession and dailyLimitOk and drawdownOk
+
+// ----------------------------------------------------------------------------
 // 5) ENTRY SIGNAL
 // ----------------------------------------------------------------------------
 barGate = useConfirmedBar ? barstate.isconfirmed : true
 
-longSignal  = (not enableTrend or trendBullish) and (not enableZone or priceInLongZone) and (not enableFVG or longFVGFound) and (not enableBreakoutRetest or retestLongTouch)  and barGate and strategy.position_size <= 0
-shortSignal = (not enableTrend or trendBearish) and (not enableZone or priceInShortZone) and (not enableFVG or shortFVGFound) and (not enableBreakoutRetest or retestShortTouch) and barGate and strategy.position_size >= 0
+longSignal  = (not enableTrend or trendBullish) and (not enableZone or priceInLongZone) and (not enableFVG or longFVGFound) and (not enableBreakoutRetest or retestLongTouch)  and barGate and riskGateOk and strategy.position_size <= 0
+shortSignal = (not enableTrend or trendBearish) and (not enableZone or priceInShortZone) and (not enableFVG or shortFVGFound) and (not enableBreakoutRetest or retestShortTouch) and barGate and riskGateOk and strategy.position_size >= 0
 
 // ----------------------------------------------------------------------------
 // 6) RISK MANAGEMENT + WEBHOOK ALERT PAYLOADS
@@ -241,6 +274,7 @@ if longSignal
     exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"long\",\"strategy\":\"1H-Retrace-FVG-Retest\"}"
     strategy.entry("Long", strategy.long, alert_message = longMsg)
     strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+    dayTradeCount := dayTradeCount + 1
     if showTradeBoxes
         [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice)
         profitBox  := pb
@@ -258,6 +292,7 @@ if shortSignal
     exitMsg = "{\"action\":\"close\",\"symbol\":\"" + webhookSymbolStr + "\",\"side\":\"short\",\"strategy\":\"1H-Retrace-FVG-Retest\"}"
     strategy.entry("Short", strategy.short, alert_message = shortMsg)
     strategy.exit("Short Exit", from_entry = "Short", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+    dayTradeCount := dayTradeCount + 1
     if showTradeBoxes
         [pb, rb, el] = drawTradeVisuals(false, close, slPrice, tpPrice)
         profitBox  := pb
@@ -302,7 +337,7 @@ if totalClosed > prevClosedCount
     prevClosedCount := totalClosed
 
 if showTable
-    var table statusTbl = table.new(position.top_right, 2, 5, border_width = 1)
+    var table statusTbl = table.new(position.top_right, 2, 6, border_width = 1)
     if barstate.islast
         table.cell(statusTbl, 0, 0, "Win Rate", bgcolor = color.gray, text_color = color.white)
         table.cell(statusTbl, 1, 0, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
@@ -314,3 +349,5 @@ if showTable
         table.cell(statusTbl, 1, 3, str.tostring(dailyWin), text_color = color.white, bgcolor = color.new(color.green, 60))
         table.cell(statusTbl, 0, 4, "Daily Loss", bgcolor = color.gray, text_color = color.white)
         table.cell(statusTbl, 1, 4, str.tostring(dailyLoss), text_color = color.white, bgcolor = color.new(color.red, 60))
+        table.cell(statusTbl, 0, 5, "Drawdown", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 5, str.tostring(drawdownPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.orange, 60))
