@@ -283,68 +283,34 @@ lossTrades  = strategy.losstrades
 totalClosed = strategy.closedtrades
 winPct = totalClosed > 0 ? (winTrades / totalClosed) * 100.0 : 0.0
 
-var float peakEquity     = strategy.initial_capital
-var float maxDrawdownVal = 0.0
-peakEquity := math.max(peakEquity, strategy.equity)
-currentDrawdown = peakEquity - strategy.equity
-maxDrawdownVal := math.max(maxDrawdownVal, currentDrawdown)
-maxDrawdownPct = peakEquity > 0 ? (maxDrawdownVal / peakEquity) * 100.0 : 0.0
+currentDateStr = str.format_time(time, "yyyy-MM-dd")
+var string lastDateStr     = na
+var int    dailyWin        = 0
+var int    dailyLoss       = 0
+var int    prevClosedCount = 0
+if na(lastDateStr) or currentDateStr != lastDateStr
+    dailyWin    := 0
+    dailyLoss   := 0
+    lastDateStr := currentDateStr
 
-currentTimeStr = str.format_time(time, "yyyy-MM-dd HH:mm")
-
-var int totalBars      = 0
-var int trendBars      = 0
-var int zoneTouchBars  = 0
-var int fvgFoundBars   = 0
-var int breakoutEvents = 0
-var int retestHits     = 0
-
-totalBars := totalBars + 1
-if trendBullish or trendBearish
-    trendBars := trendBars + 1
-if priceInLongZone or priceInShortZone
-    zoneTouchBars := zoneTouchBars + 1
-if longFVGFound or shortFVGFound
-    fvgFoundBars := fvgFoundBars + 1
-if breakoutUp or breakoutDown
-    breakoutEvents := breakoutEvents + 1
-if retestLongTouch or retestShortTouch
-    retestHits := retestHits + 1
-
-chartTFOk = timeframe.period == ltfFVGTF
+if totalClosed > prevClosedCount
+    lastTradeProfit = strategy.closedtrades.profit(totalClosed - 1)
+    if lastTradeProfit > 0
+        dailyWin := dailyWin + 1
+    else
+        dailyLoss := dailyLoss + 1
+    prevClosedCount := totalClosed
 
 if showTable
-    var table statusTbl = table.new(position.top_right, 2, 16, border_width = 1)
+    var table statusTbl = table.new(position.top_right, 2, 5, border_width = 1)
     if barstate.islast
-        table.cell(statusTbl, 0, 0, "Chart TF Match", bgcolor = chartTFOk ? color.gray : color.red, text_color = color.white)
-        table.cell(statusTbl, 1, 0, chartTFOk ? "OK (" + timeframe.period + ")" : "MISMATCH! Chart=" + timeframe.period + " FVG TF=" + ltfFVGTF, text_color = color.white, bgcolor = chartTFOk ? color.new(color.green, 60) : color.new(color.red, 40))
-        table.cell(statusTbl, 0, 1, "Win Rate", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 1, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
-        table.cell(statusTbl, 0, 2, "Win / Loss", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 2, str.tostring(winTrades) + " / " + str.tostring(lossTrades), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 3, "Max Drawdown", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 3, str.tostring(maxDrawdownPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.orange, 60))
-        table.cell(statusTbl, 0, 4, "1H Trend", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 4, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? color.green : trendBearish ? color.red : color.gray, text_color = color.white)
-        table.cell(statusTbl, 0, 5, "In Zone", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 5, priceInLongZone ? "Long Zone" : priceInShortZone ? "Short Zone" : "No", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 6, "1m FVG", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 6, longFVGFound ? "Long Found" : shortFVGFound ? "Short Found" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 7, "Breakout/Retest", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 7, retestLongTouch ? "Long Retest" : retestShortTouch ? "Short Retest" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 8, "Position", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 8, strategy.position_size > 0 ? "Long" : strategy.position_size < 0 ? "Short" : "Flat", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 9, "Last Signal", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 9, longSignal ? "LONG" : shortSignal ? "SHORT" : "-", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 10, "Total Bars", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 10, str.tostring(totalBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 11, "Trend Bars", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 11, str.tostring(trendBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 12, "Zone Touch Bars", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 12, str.tostring(zoneTouchBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 13, "FVG Found Bars", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 13, str.tostring(fvgFoundBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 14, "Breakout Events", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 14, str.tostring(breakoutEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 15, "Retest Hits", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 15, str.tostring(retestHits), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 0, "Win Rate", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 0, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
+        table.cell(statusTbl, 0, 1, "Win", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 1, str.tostring(winTrades), text_color = color.white, bgcolor = color.new(color.green, 60))
+        table.cell(statusTbl, 0, 2, "Loss", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 2, str.tostring(lossTrades), text_color = color.white, bgcolor = color.new(color.red, 60))
+        table.cell(statusTbl, 0, 3, "Daily Win", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 3, str.tostring(dailyWin), text_color = color.white, bgcolor = color.new(color.green, 60))
+        table.cell(statusTbl, 0, 4, "Daily Loss", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 4, str.tostring(dailyLoss), text_color = color.white, bgcolor = color.new(color.red, 60))
