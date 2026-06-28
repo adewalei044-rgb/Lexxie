@@ -246,7 +246,7 @@ var box   profitBox  = na
 var box   riskBox    = na
 var label entryLabel = na
 
-drawTradeVisuals(isLong, entryPrice, sl, tp) =>
+drawTradeVisuals(isLong, entryPrice, sl, tp, useSimpleLabel) =>
     box.delete(profitBox)
     box.delete(riskBox)
     label.delete(entryLabel)
@@ -257,10 +257,12 @@ drawTradeVisuals(isLong, entryPrice, sl, tp) =>
     riskBottom   = isLong ? sl : entryPrice
     newProfitBox = box.new(bar_index, profitTop, rightBar, profitBottom, border_color = color.green, bgcolor = color.new(color.green, 85))
     newRiskBox   = box.new(bar_index, riskTop, rightBar, riskBottom, border_color = color.red, bgcolor = color.new(color.red, 85))
-    newLabel     = label.new(bar_index, entryPrice,
-         str.format("{0}\nEntry {1}\nTP {2}\nSL {3}\nR:R 1:{4}", isLong ? "BUY" : "SELL", entryPrice, tp, sl, rrMultiple),
-         style = isLong ? label.style_label_up : label.style_label_down,
-         color = isLong ? color.green : color.red, textcolor = color.white, size = size.small)
+    newLabel     = useSimpleLabel
+         ? label.new(bar_index, isLong ? entryPrice - (tp - entryPrice) * 0.1 : entryPrice + (entryPrice - tp) * 0.1, isLong ? "BUY" : "SELL", style = isLong ? label.style_label_up : label.style_label_down, color = isLong ? color.green : color.red, textcolor = color.white, size = size.small)
+         : label.new(bar_index, entryPrice,
+              (isLong ? "BUY" : "SELL") + "\nEntry " + str.tostring(entryPrice, format.mintick) + "\nTP " + str.tostring(tp, format.mintick) + "\nSL " + str.tostring(sl, format.mintick) + "\nR:R 1:" + str.tostring(rrMultiple, "#.#"),
+              style = isLong ? label.style_label_up : label.style_label_down,
+              color = isLong ? color.green : color.red, textcolor = color.white, size = size.small)
     [newProfitBox, newRiskBox, newLabel]
 
 if longSignal
@@ -276,7 +278,7 @@ if longSignal
     strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
     dayTradeCount := dayTradeCount + 1
     if showTradeBoxes
-        [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice)
+        [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice, false)
         profitBox  := pb
         riskBox    := rb
         entryLabel := el
@@ -294,7 +296,7 @@ if shortSignal
     strategy.exit("Short Exit", from_entry = "Short", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
     dayTradeCount := dayTradeCount + 1
     if showTradeBoxes
-        [pb, rb, el] = drawTradeVisuals(false, close, slPrice, tpPrice)
+        [pb, rb, el] = drawTradeVisuals(false, close, slPrice, tpPrice, true)
         profitBox  := pb
         riskBox    := rb
         entryLabel := el
