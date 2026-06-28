@@ -1,3 +1,17 @@
+# 1H Retracement + FVG + Breakout Retest Strategy (Pine Script v6)
+
+`1H_Retracement_FVG_Breakout_Strategy.pine` is a simpler, separate strategy (does not touch or replace the ICT MTF Confluence script below):
+
+1. **1H trend** — the most recently closed 1H candle's body is fully above (bull) or below (bear) the prior 1H candle's body.
+2. **Retracement zone** — a shallow pullback zone sized at `retracePct` (default 0.20 = 20%) of that 1H candle's range, measured from the breakout edge (top 20% of the range for a bull candle, bottom 20% for a bear candle).
+3. **1m FVG in zone** — a 3-candle Fair Value Gap on the 1-minute chart must overlap that retracement zone (padded by `fvgZoneBufferPct` to allow near-misses).
+4. **1m breakout + retest** — price must break a recent 1m swing high/low (`breakoutLookback` bars) in the trend direction, then retest (dip back to within `retestToleranceTicks` of) that broken level and hold, before entry.
+5. **Risk management** — SL is placed just beyond the retested breakout level, TP is `rrMultiple` (default 2R). Same webhook JSON format as the ICT MTF Confluence strategy.
+
+Like the other script, it has a "Step 0 - Enable / Disable Rules" group so each stage can be toggled off individually for testing, and a status table with diagnostic counters (Total Bars, Trend Bars, Zone Touch Bars, FVG Found Bars, Breakout Events, Retest Hits) to find the bottleneck if you get 0 trades.
+
+---
+
 # ICT MTF Confluence Strategy (Pine Script v6)
 
 `ICT_MTF_Confluence_Strategy.pine` implements the multi-timeframe entry model:
