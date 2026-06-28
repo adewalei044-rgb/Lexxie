@@ -25,6 +25,14 @@ strategy("ICT MTF Confluence Strategy (4H Trend / 1H Gann Zone / 1m-5m FVG)",
 // Tap the (i) icon next to any setting in TradingView for a plain-English
 // explanation of what it does and which direction loosens vs. tightens it.
 // ----------------------------------------------------------------------------
+grpRules             = "Step 0 - Enable / Disable Rules (for testing)"
+enableTrendFilter    = input.bool(true, "4H Trend Filter",               tooltip = "Off = ignore the 4H trend direction entirely; long and short setups both become available regardless of trend.", group = grpRules)
+enableMomentumShift  = input.bool(true, "1H Momentum Body Shift",        tooltip = "Off = ignore the 1H momentum candle (body-shift) requirement.", group = grpRules)
+enableGannZone       = input.bool(true, "1H Gann Box Zone",              tooltip = "Off = ignore the 1H Gann retracement zone, both for 'price is in the zone right now' and for the FVG-vs-zone overlap check used inside FVG confluence.", group = grpRules)
+enableStopHunt       = input.bool(true, "1m Stop Hunt / Liquidity Sweep",tooltip = "Off = ignore the stop-hunt/liquidity-sweep requirement.", group = grpRules)
+enableFVGConfluence  = input.bool(true, "1m/5m FVG Confluence",          tooltip = "Off = ignore the requirement that the 1m FVG also overlaps a confluent 5m FVG. The 1m FVG itself is still required as the entry zone (rejection still needs a zone to wick into).", group = grpRules)
+enableRejectionWick  = input.bool(true, "Rejection Candle Wick",         tooltip = "Off = ignore the wick-to-body ratio and close-direction requirement. Price still has to wick into the FVG zone, it just no longer needs the rejection wick/close shape.", group = grpRules)
+
 grpTrend = "Step 1 - Trend Filter (4H)"
 maLen    = input.int(200, "MA Length", tooltip = "How many 4H candles the trend average uses. Smaller = trend flips more often (more setups, less reliable). Larger = stricter trend, fewer setups.", group = grpTrend)
 maType   = input.string("EMA", "MA Type", options = ["EMA", "SMA"], tooltip = "EMA reacts faster to recent price than SMA.", group = grpTrend)
@@ -194,7 +202,7 @@ trackFVG(htfFVGTF, fvgMaxActive, htfTop, htfBot, htfBull, htfBar)
 //    fvgOverlapBufferPct pads both of those overlap checks so near-misses
 //    between the three narrow bands still register as confluence.
 // ----------------------------------------------------------------------------
-findSetup(isBull, gannLow, gannHigh) =>
+findSetup(isBull, gannLow, gannHigh, enableGann, enableHtfConf, enableRej) =>
     body      = math.abs(close - open)
     lowerWick = math.min(open, close) - low
     upperWick = high - math.max(open, close)
@@ -218,6 +226,8 @@ findSetup(isBull, gannLow, gannHigh) =>
                 gannOverlap = math.max(b1, gannLow - gannPad) <= math.min(t1, gannHigh + gannPad)
                 if gannOverlap
                     gannHit := true
+                // enableGann off bypasses the Gann-zone overlap requirement (diagnostic gannHit stays raw above)
+                if gannOverlap or not enableGann
                     conf = false
                     m = array.size(htfTop)
                     if m > 0
@@ -230,25 +240,33 @@ findSetup(isBull, gannLow, gannHigh) =>
                                     conf := true
                     if conf
                         htfHit := true
+                    // enableHtfConf off bypasses the 5m-FVG-confluence requirement (1m FVG zone is still required)
+                    if conf or not enableHtfConf
                         touched = low <= t1 and high >= b1
                         if touched
                             touchHit := true
-                        rej = isBull ?
-                             (close > open and lowerWick >= body * rejWickFactor and touched) :
-                             (close < open and upperWick >= body * rejWickFactor and touched)
+                        rej = enableRej ?
+                             (isBull ?
+                                 (close > open and lowerWick >= body * rejWickFactor and touched) :
+                                 (close < open and upperWick >= body * rejWickFactor and touched)) :
+                             touched
                         if rej
                             found    := true
                             foundTop := t1
                             foundBot := b1
     [found, foundTop, foundBot, dirMatch, gannHit, htfHit, touchHit]
 
-[longFVGFound,  longFvgTop,  longFvgBot,  longDirMatch,  longGannHit,  longHtfHit,  longTouchHit]  = findSetup(true,  longZoneLow,  longZoneHigh)
-[shortFVGFound, shortFvgTop, shortFvgBot, shortDirMatch, shortGannHit, shortHtfHit, shortTouchHit] = findSetup(false, shortZoneLow, shortZoneHigh)
+[longFVGFound,  longFvgTop,  longFvgBot,  longDirMatch,  longGannHit,  longHtfHit,  longTouchHit]  = findSetup(true,  longZoneLow,  longZoneHigh, enableGannZone, enableFVGConfluence, enableRejectionWick)
+[shortFVGFound, shortFvgTop, shortFvgBot, shortDirMatch, shortGannHit, shortHtfHit, shortTouchHit] = findSetup(false, shortZoneLow, shortZoneHigh, enableGannZone, enableFVGConfluence, enableRejectionWick)
 
 barGate = useConfirmedBar ? barstate.isconfirmed : true
 
-longSignal  = longSetupActive  and stopHuntLongActive  and longFVGFound  and barGate and strategy.position_size <= 0
-shortSignal = shortSetupActive and stopHuntShortActive and shortFVGFound and barGate and strategy.position_size >= 0
+// Each "not enableX or ..." term bypasses (always passes) that stage when its
+// Step 0 toggle is off. With all toggles at their default (true), this is
+// exactly equivalent to the original longSetupActive/shortSetupActive +
+// stopHuntLongActive/stopHuntShortActive gating — zero behavior change.
+longSignal  = (not enableTrendFilter or trendBullish) and (not enableMomentumShift or bullishBodyShift) and (not enableGannZone or priceInLongZone) and (not enableStopHunt or stopHuntLongActive) and longFVGFound and barGate and strategy.position_size <= 0
+shortSignal = (not enableTrendFilter or trendBearish) and (not enableMomentumShift or bearishBodyShift) and (not enableGannZone or priceInShortZone) and (not enableStopHunt or stopHuntShortActive) and shortFVGFound and barGate and strategy.position_size >= 0
 
 // ----------------------------------------------------------------------------
 // 6) RISK MANAGEMENT + WEBHOOK ALERT PAYLOADS

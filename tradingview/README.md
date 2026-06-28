@@ -2,6 +2,10 @@
 
 `ICT_MTF_Confluence_Strategy.pine` implements the multi-timeframe entry model:
 
+## Turning rules on/off (Step 0)
+
+The first input group, **"Step 0 - Enable / Disable Rules (for testing)"**, has one on/off switch per stage below: `4H Trend Filter`, `1H Momentum Body Shift`, `1H Gann Box Zone`, `1m Stop Hunt / Liquidity Sweep`, `1m/5m FVG Confluence`, `Rejection Candle Wick`. All default to **On**, which reproduces the exact original strategy behavior — flipping one Off bypasses just that stage (treats it as always-passing) so you can test, from the Inputs panel alone, which combination of stages is needed to get a trade without editing the script. Useful for isolating the zero-trades bottleneck reported by the diagnostic counters below.
+
 1. **4H trend filter** — trend is bullish/bearish based on price vs. a 200-period MA (EMA or SMA, input-selectable) on the 4H chart.
 2. **1H momentum + Gann box zone** — the most recently closed 1H candle's body must sit above (bull trend) or below (bear trend) the prior 1H candle's body, with `momentumOverlapPct` (default 0.25) allowing that fraction of the prior body's size to overlap before disqualifying the shift — set it to 0 for the original strict "zero overlap" rule. The 1H candle's low-to-high range is then divided with a Gann-box-style retracement: long entries are only considered while price is trading back into the **0.5–0.75** zone of that range, shorts into the **0.25–0.5** zone (both ratios are inputs).
 3. **1m stop hunt** — a wick sweep of a recent swing low/high that closes back inside (liquidity grab) on the 1-minute chart, valid for a configurable number of bars.
