@@ -248,3 +248,44 @@ plot(inLongZone  ? longZoneUpper  : na, "Long zone upper",  color = color.new(co
 plot(inLongZone  ? longZoneLower  : na, "Long zone lower",  color = color.new(color.green, 40), style = plot.style_linebr)
 plot(inShortZone ? shortZoneUpper : na, "Short zone upper", color = color.new(color.red,   40), style = plot.style_linebr)
 plot(inShortZone ? shortZoneLower : na, "Short zone lower", color = color.new(color.red,   40), style = plot.style_linebr)
+
+// ============================================================================
+//  STATS TABLE  (top-right corner)
+//  Win %, Win trades, Loss trades, Daily win, Daily loss, Drawdown
+// ============================================================================
+var int   dailyWin    = 0
+var int   dailyLoss   = 0
+var int   lastClosed  = 0
+
+// reset the daily counters at the start of each new trading day
+newDay = ta.change(time("D")) != 0
+if newDay
+    dailyWin  := 0
+    dailyLoss := 0
+
+// tally any trades that closed since the previous bar
+if strategy.closedtrades > lastClosed
+    for i = lastClosed to strategy.closedtrades - 1
+        p = strategy.closedtrades.profit(i)
+        if p > 0
+            dailyWin  += 1
+        else if p < 0
+            dailyLoss += 1
+    lastClosed := strategy.closedtrades
+
+winRate = strategy.closedtrades > 0 ? strategy.wintrades / strategy.closedtrades * 100 : 0.0
+ddPerc  = strategy.max_drawdown_percent
+
+var table stats = table.new(position.top_right, 2, 6, border_width = 1, border_color = color.new(color.gray, 50))
+
+f_row(_t, _row, _label, _val, _valColor) =>
+    table.cell(_t, 0, _row, _label, text_color = color.white,   text_size = size.small, bgcolor = color.new(color.gray, 20), text_halign = text.align_left)
+    table.cell(_t, 1, _row, _val,   text_color = _valColor,     text_size = size.small, bgcolor = color.new(color.black, 20), text_halign = text.align_right)
+
+if barstate.islast
+    f_row(stats, 0, "Win %",     str.tostring(winRate, "#.##") + "%", winRate >= 50 ? color.lime : color.orange)
+    f_row(stats, 1, "Win",       str.tostring(strategy.wintrades),    color.lime)
+    f_row(stats, 2, "Loss",      str.tostring(strategy.losstrades),   color.red)
+    f_row(stats, 3, "Daily win", str.tostring(dailyWin),              color.lime)
+    f_row(stats, 4, "Daily loss",str.tostring(dailyLoss),             color.red)
+    f_row(stats, 5, "Drawdown",  str.tostring(ddPerc, "#.##") + "%",  color.fuchsia)

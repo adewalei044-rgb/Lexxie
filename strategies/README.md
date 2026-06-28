@@ -78,6 +78,13 @@ Entries and exits emit JSON like:
 - **1m entry:** confluence timeframe (5m), stop-hunt lookback, FVG validity window.
 - **Risk:** stop-loss %, risk:reward ratio (default **1:3**), toggle SL/TP.
 
+## Stats table
+
+A small table is drawn in the **top-right corner** showing live backtest stats:
+**Win %**, **Win** trades, **Loss** trades, **Daily win**, **Daily loss**, and
+**Drawdown** (max drawdown %). Daily win/loss reset at the start of each new
+trading day.
+
 ## Notes & caveats
 
 - This is the strict, fully-stacked interpretation of the rules — every
