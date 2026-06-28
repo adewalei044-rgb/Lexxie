@@ -338,10 +338,17 @@ if na(lastDateStr) or currentDateStr != lastDateStr
     dailyLoss   := 0
     lastDateStr := currentDateStr
 
+winBoxHeight = ta.atr(14) * 0.3
+
 if totalClosed > prevClosedCount
     lastTradeProfit = strategy.closedtrades.profit(totalClosed - 1)
+    exitBar   = strategy.closedtrades.exit_bar_index(totalClosed - 1)
+    exitPrice = strategy.closedtrades.exit_price(totalClosed - 1)
     if lastTradeProfit > 0
         dailyWin := dailyWin + 1
+        if showTradeBoxes
+            box.new(exitBar - 2, exitPrice + winBoxHeight, exitBar + 2, exitPrice - winBoxHeight, border_color = color.lime, bgcolor = color.new(color.lime, 80))
+            label.new(exitBar, exitPrice + winBoxHeight * 1.5, "WIN", style = label.style_label_down, color = color.lime, textcolor = color.black, size = size.small)
     else
         dailyLoss := dailyLoss + 1
     prevClosedCount := totalClosed
