@@ -199,15 +199,21 @@ findSetup(isBull, gannLow, gannHigh) =>
     foundTop = float(na)
     foundBot = float(na)
     found    = false
+    dirMatch = false   // diagnostic: at least one FVG in the right direction within age limit
+    gannHit  = false   // diagnostic: that FVG also overlaps the Gann zone
+    htfHit   = false   // diagnostic: gann-matched FVG also overlaps a confluent HTF FVG
+    touchHit = false   // diagnostic: price has wicked back into a fully-confluent FVG zone
 
     n = array.size(ltfTop)
     if n > 0
         for i = 0 to n - 1
             if array.get(ltfBull, i) == isBull and (bar_index - array.get(ltfBar, i)) <= fvgMaxAge
+                dirMatch := true
                 t1 = array.get(ltfTop, i)
                 b1 = array.get(ltfBot, i)
                 gannOverlap = math.max(b1, gannLow) <= math.min(t1, gannHigh)
                 if gannOverlap
+                    gannHit := true
                     conf = false
                     m = array.size(htfTop)
                     if m > 0
@@ -218,7 +224,10 @@ findSetup(isBull, gannLow, gannHigh) =>
                                 if math.max(b1, b5) <= math.min(t1, t5)
                                     conf := true
                     if conf
+                        htfHit := true
                         touched = low <= t1 and high >= b1
+                        if touched
+                            touchHit := true
                         rej = isBull ?
                              (close > open and lowerWick >= body * rejWickFactor and touched) :
                              (close < open and upperWick >= body * rejWickFactor and touched)
@@ -226,10 +235,10 @@ findSetup(isBull, gannLow, gannHigh) =>
                             found    := true
                             foundTop := t1
                             foundBot := b1
-    [found, foundTop, foundBot]
+    [found, foundTop, foundBot, dirMatch, gannHit, htfHit, touchHit]
 
-[longFVGFound,  longFvgTop,  longFvgBot]  = findSetup(true,  longZoneLow,  longZoneHigh)
-[shortFVGFound, shortFvgTop, shortFvgBot] = findSetup(false, shortZoneLow, shortZoneHigh)
+[longFVGFound,  longFvgTop,  longFvgBot,  longDirMatch,  longGannHit,  longHtfHit,  longTouchHit]  = findSetup(true,  longZoneLow,  longZoneHigh)
+[shortFVGFound, shortFvgTop, shortFvgBot, shortDirMatch, shortGannHit, shortHtfHit, shortTouchHit] = findSetup(false, shortZoneLow, shortZoneHigh)
 
 barGate = useConfirmedBar ? barstate.isconfirmed : true
 
@@ -335,6 +344,10 @@ var int momentumEvents  = 0
 var int zoneTouchBars   = 0
 var int stopHuntEvents  = 0
 var int fvgConfluences  = 0
+var int fvgDirMatches   = 0   // an active FVG existed in the right direction
+var int fvgGannHits     = 0   // that FVG also overlapped the Gann zone
+var int fvgHtfHits      = 0   // gann-matched FVG also overlapped a confluent HTF FVG
+var int fvgTouchHits    = 0   // price wicked back into a fully-confluent FVG zone
 
 totalBars := totalBars + 1
 if trendBullish or trendBearish
@@ -347,43 +360,63 @@ if stopHuntLongRaw or stopHuntShortRaw
     stopHuntEvents := stopHuntEvents + 1
 if longFVGFound or shortFVGFound
     fvgConfluences := fvgConfluences + 1
+if longDirMatch or shortDirMatch
+    fvgDirMatches := fvgDirMatches + 1
+if longGannHit or shortGannHit
+    fvgGannHits := fvgGannHits + 1
+if longHtfHit or shortHtfHit
+    fvgHtfHits := fvgHtfHits + 1
+if longTouchHit or shortTouchHit
+    fvgTouchHits := fvgTouchHits + 1
+
+chartTFOk = timeframe.period == ltfFVGTF
 
 if showTable
-    var table statusTbl = table.new(position.top_right, 2, 18, border_width = 1)
+    var table statusTbl = table.new(position.top_right, 2, 23, border_width = 1)
     if barstate.islast
-        table.cell(statusTbl, 0, 0, "Win Rate",      bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 0, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
-        table.cell(statusTbl, 0, 1, "Time",          bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 1, currentTimeStr,  text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 2, "Win Trades",    bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 2, str.tostring(winTrades), text_color = color.white, bgcolor = color.new(color.green, 60))
-        table.cell(statusTbl, 0, 3, "Loss Trades",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 3, str.tostring(lossTrades), text_color = color.white, bgcolor = color.new(color.red, 60))
-        table.cell(statusTbl, 0, 4, "Max Drawdown", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 4, str.tostring(maxDrawdownPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.orange, 60))
-        table.cell(statusTbl, 0, 5, "4H Trend",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 5, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? color.green : trendBearish ? color.red : color.gray, text_color = color.white)
-        table.cell(statusTbl, 0, 6, "1H Momentum",  bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 6, bullishBodyShift ? "Bull Shift" : bearishBodyShift ? "Bear Shift" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 7, "Gann Zone",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 7, longSetupActive ? "Long Active" : shortSetupActive ? "Short Active" : "Inactive", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 8, "Stop Hunt",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 8, stopHuntLongActive ? "Long Sweep" : stopHuntShortActive ? "Short Sweep" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 9, "1m/5m FVG",     bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 9, longFVGFound ? "Long Confluent" : shortFVGFound ? "Short Confluent" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 10, "Position",      bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 10, strategy.position_size > 0 ? "Long" : strategy.position_size < 0 ? "Short" : "Flat", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 11, "Last Signal",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 11, longSignal ? "LONG" : shortSignal ? "SHORT" : "-", text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 12, "Total Bars",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 12, str.tostring(totalBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 13, "Trend Bars",   bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 13, str.tostring(trendBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 14, "Momentum Events", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 14, str.tostring(momentumEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 15, "Zone Touch Bars", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 15, str.tostring(zoneTouchBars), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 16, "Stop Hunt Events", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 16, str.tostring(stopHuntEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
-        table.cell(statusTbl, 0, 17, "FVG Confluences", bgcolor = color.gray, text_color = color.white)
-        table.cell(statusTbl, 1, 17, str.tostring(fvgConfluences), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 0, "Chart TF Match", bgcolor = chartTFOk ? color.gray : color.red, text_color = color.white)
+        table.cell(statusTbl, 1, 0, chartTFOk ? "OK (" + timeframe.period + ")" : "MISMATCH! Chart=" + timeframe.period + " Entry TF=" + ltfFVGTF, text_color = color.white, bgcolor = chartTFOk ? color.new(color.green, 60) : color.new(color.red, 40))
+        table.cell(statusTbl, 0, 1, "Win Rate",      bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 1, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
+        table.cell(statusTbl, 0, 2, "Time",          bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 2, currentTimeStr,  text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 3, "Win Trades",    bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 3, str.tostring(winTrades), text_color = color.white, bgcolor = color.new(color.green, 60))
+        table.cell(statusTbl, 0, 4, "Loss Trades",   bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 4, str.tostring(lossTrades), text_color = color.white, bgcolor = color.new(color.red, 60))
+        table.cell(statusTbl, 0, 5, "Max Drawdown", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 5, str.tostring(maxDrawdownPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.orange, 60))
+        table.cell(statusTbl, 0, 6, "4H Trend",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 6, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? color.green : trendBearish ? color.red : color.gray, text_color = color.white)
+        table.cell(statusTbl, 0, 7, "1H Momentum",  bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 7, bullishBodyShift ? "Bull Shift" : bearishBodyShift ? "Bear Shift" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 8, "Gann Zone",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 8, longSetupActive ? "Long Active" : shortSetupActive ? "Short Active" : "Inactive", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 9, "Stop Hunt",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 9, stopHuntLongActive ? "Long Sweep" : stopHuntShortActive ? "Short Sweep" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 10, "1m/5m FVG",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 10, longFVGFound ? "Long Confluent" : shortFVGFound ? "Short Confluent" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 11, "Position",      bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 11, strategy.position_size > 0 ? "Long" : strategy.position_size < 0 ? "Short" : "Flat", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 12, "Last Signal",   bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 12, longSignal ? "LONG" : shortSignal ? "SHORT" : "-", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 13, "Total Bars",   bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 13, str.tostring(totalBars), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 14, "Trend Bars",   bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 14, str.tostring(trendBars), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 15, "Momentum Events", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 15, str.tostring(momentumEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 16, "Zone Touch Bars", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 16, str.tostring(zoneTouchBars), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 17, "Stop Hunt Events", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 17, str.tostring(stopHuntEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 18, "FVG Confluences", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 18, str.tostring(fvgConfluences), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 19, "FVG: Dir Match", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 19, str.tostring(fvgDirMatches), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 20, "FVG: Gann Hit", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 20, str.tostring(fvgGannHits), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 21, "FVG: HTF Hit", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 21, str.tostring(fvgHtfHits), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 22, "FVG: Touch Hit", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 22, str.tostring(fvgTouchHits), text_color = color.white, bgcolor = color.new(color.black, 0))
