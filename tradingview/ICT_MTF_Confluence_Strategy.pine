@@ -1,0 +1,289 @@
+//@version=6
+strategy("ICT MTF Confluence Strategy (4H Trend / 1H Gann Zone / 1m-5m FVG)",
+     shorttitle = "ICT-MTF-Confluence",
+     overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 10,
+     calc_on_every_tick = true,
+     process_orders_on_close = true)
+
+// =============================================================================
+// Run this script on a 1-minute chart. All higher timeframes are pulled
+// explicitly via request.security(), so the logic is correct regardless of
+// the chart's own timeframe, but the 1m entry trigger assumes a 1m chart.
+//
+// WEBHOOK NOTE: Pine Script cannot call a URL directly — TradingView posts
+// the alert_message JSON below to whatever "Webhook URL" you paste into the
+// alert dialog when you create an alert from this strategy. Set that up in
+// TradingView: Create Alert -> Condition: this strategy -> check "Webhook
+// URL" -> paste your receiver's URL. The JSON payloads are built below.
+// =============================================================================
+
+// ----------------------------------------------------------------------------
+// INPUTS
+// ----------------------------------------------------------------------------
+grpTrend = "1) 4H Trend Filter"
+maLen    = input.int(200, "MA Length", group = grpTrend)
+maType   = input.string("EMA", "MA Type", options = ["EMA", "SMA"], group = grpTrend)
+trendTF  = input.timeframe("240", "Trend Timeframe", group = grpTrend)
+
+grp1h        = "2) 1H Momentum + Gann Box Zone"
+htfTF        = input.timeframe("60", "1H Signal Timeframe", group = grp1h)
+longZoneLowPct  = input.float(0.5,  "Long Zone Low (0-1 of candle range)",  step = 0.01, group = grp1h)
+longZoneHighPct = input.float(0.75, "Long Zone High (0-1 of candle range)", step = 0.01, group = grp1h)
+shortZoneLowPct = input.float(0.25, "Short Zone Low (0-1 of candle range)", step = 0.01, group = grp1h)
+shortZoneHighPct= input.float(0.5,  "Short Zone High (0-1 of candle range)",step = 0.01, group = grp1h)
+
+grpHunt       = "3) 1m Stop Hunt"
+huntLookback  = input.int(10, "Swing Lookback (bars)", group = grpHunt)
+huntValidBars = input.int(15, "Stop Hunt Stays Valid For (bars)", group = grpHunt)
+
+grpFVG        = "4) FVG + Multi-TF Confluence"
+ltfFVGTF      = input.timeframe("1", "Entry FVG Timeframe", group = grpFVG)
+htfFVGTF      = input.timeframe("5", "Confluence FVG Timeframe", group = grpFVG)
+fvgMaxAge     = input.int(50, "Max FVG / Stop-Hunt Age (bars)", group = grpFVG)
+fvgMaxActive  = input.int(20, "Max Tracked FVGs per Timeframe", group = grpFVG)
+
+grpReject     = "5) Rejection Candle"
+rejWickFactor = input.float(1.5, "Min Wick-to-Body Ratio", step = 0.1, group = grpReject)
+
+grpRisk       = "6) Risk Management"
+rrMultiple    = input.float(2.0, "Reward : Risk Multiple", step = 0.1, group = grpRisk)
+slBufferTicks = input.float(2, "Extra SL Buffer (ticks beyond hunt wick)", group = grpRisk)
+useConfirmedBar = input.bool(true, "Only Trigger on Confirmed (Closed) Bar", group = grpRisk)
+
+grpWebhook    = "7) Webhook Alert Payload"
+webhookSymbol = input.string("", "Symbol Override for JSON (blank = chart ticker)", group = grpWebhook)
+qtyForAlert   = input.float(1, "Quantity field to send in JSON", group = grpWebhook)
+
+grpVis        = "8) Visuals"
+showZoneLines = input.bool(true, "Show Gann Zone Lines", group = grpVis)
+showBg        = input.bool(true, "Show Trend Background", group = grpVis)
+showTable     = input.bool(true, "Show Status Table", group = grpVis)
+
+// ----------------------------------------------------------------------------
+// 1) 4H TREND FILTER
+// ----------------------------------------------------------------------------
+get_ma() =>
+    maType == "EMA" ? ta.ema(close, maLen) : ta.sma(close, maLen)
+
+htfClose = request.security(syminfo.tickerid, trendTF, close[1], lookahead = barmerge.lookahead_off)
+htfMA    = request.security(syminfo.tickerid, trendTF, get_ma()[1], lookahead = barmerge.lookahead_off)
+
+trendBullish = htfClose > htfMA
+trendBearish = htfClose < htfMA
+
+// ----------------------------------------------------------------------------
+// 2) 1H MOMENTUM CANDLE + GANN BOX RETRACEMENT ZONE
+// ----------------------------------------------------------------------------
+h1Open  = request.security(syminfo.tickerid, htfTF, open[1],  lookahead = barmerge.lookahead_off)
+h1High  = request.security(syminfo.tickerid, htfTF, high[1],  lookahead = barmerge.lookahead_off)
+h1Low   = request.security(syminfo.tickerid, htfTF, low[1],   lookahead = barmerge.lookahead_off)
+h1Close = request.security(syminfo.tickerid, htfTF, close[1], lookahead = barmerge.lookahead_off)
+h2Open  = request.security(syminfo.tickerid, htfTF, open[2],  lookahead = barmerge.lookahead_off)
+h2High  = request.security(syminfo.tickerid, htfTF, high[2],  lookahead = barmerge.lookahead_off)
+h2Low   = request.security(syminfo.tickerid, htfTF, low[2],   lookahead = barmerge.lookahead_off)
+h2Close = request.security(syminfo.tickerid, htfTF, close[2], lookahead = barmerge.lookahead_off)
+
+h1BodyHigh = math.max(h1Open, h1Close)
+h1BodyLow  = math.min(h1Open, h1Close)
+h2BodyHigh = math.max(h2Open, h2Close)
+h2BodyLow  = math.min(h2Open, h2Close)
+
+bullishBodyShift = h1BodyLow  > h2BodyHigh   // 1H candle body entirely above prior candle's body
+bearishBodyShift = h1BodyHigh < h2BodyLow    // 1H candle body entirely below prior candle's body
+
+h1Range = h1High - h1Low
+longZoneLow   = h1Low + longZoneLowPct   * h1Range
+longZoneHigh  = h1Low + longZoneHighPct  * h1Range
+shortZoneLow  = h1Low + shortZoneLowPct  * h1Range
+shortZoneHigh = h1Low + shortZoneHighPct * h1Range
+
+priceInLongZone  = low  <= longZoneHigh  and high >= longZoneLow
+priceInShortZone = high >= shortZoneLow  and low  <= shortZoneHigh
+
+longSetupActive  = trendBullish and bullishBodyShift and priceInLongZone
+shortSetupActive = trendBearish and bearishBodyShift and priceInShortZone
+
+// ----------------------------------------------------------------------------
+// 3) 1m STOP HUNT (liquidity sweep + reclaim)
+// ----------------------------------------------------------------------------
+swingLow  = ta.lowest(low,  huntLookback)[1]
+swingHigh = ta.highest(high, huntLookback)[1]
+
+stopHuntLongRaw  = low  < swingLow  and close > swingLow
+stopHuntShortRaw = high > swingHigh and close < swingHigh
+
+var int   lastLongHuntBar   = na
+var float lastLongHuntLow   = na
+var int   lastShortHuntBar  = na
+var float lastShortHuntHigh = na
+
+if stopHuntLongRaw
+    lastLongHuntBar  := bar_index
+    lastLongHuntLow  := low
+if stopHuntShortRaw
+    lastShortHuntBar  := bar_index
+    lastShortHuntHigh := high
+
+stopHuntLongActive  = not na(lastLongHuntBar)  and (bar_index - lastLongHuntBar)  <= huntValidBars
+stopHuntShortActive = not na(lastShortHuntBar) and (bar_index - lastShortHuntBar) <= huntValidBars
+
+// ----------------------------------------------------------------------------
+// 4) FVG TRACKING (1m entry timeframe + 5m confluence timeframe)
+// ----------------------------------------------------------------------------
+trackFVG(tf, maxCount, topArr, botArr, bullArr, barArr) =>
+    h1 = request.security(syminfo.tickerid, tf, high[1], lookahead = barmerge.lookahead_off)
+    h3 = request.security(syminfo.tickerid, tf, high[3], lookahead = barmerge.lookahead_off)
+    l1 = request.security(syminfo.tickerid, tf, low[1],  lookahead = barmerge.lookahead_off)
+    l3 = request.security(syminfo.tickerid, tf, low[3],  lookahead = barmerge.lookahead_off)
+    t1 = request.security(syminfo.tickerid, tf, time[1], lookahead = barmerge.lookahead_off)
+
+    var int lastClosedTime = na
+    isNewClose = t1 != lastClosedTime
+
+    bull = l1 > h3
+    bear = h1 < l3
+
+    if isNewClose
+        lastClosedTime := t1
+        if bull
+            array.push(topArr, l1)
+            array.push(botArr, h3)
+            array.push(bullArr, true)
+            array.push(barArr, bar_index)
+        if bear
+            array.push(topArr, l3)
+            array.push(botArr, h1)
+            array.push(bullArr, false)
+            array.push(barArr, bar_index)
+        while array.size(topArr) > maxCount
+            array.shift(topArr)
+            array.shift(botArr)
+            array.shift(bullArr)
+            array.shift(barArr)
+
+var float[] ltfTop  = array.new<float>()
+var float[] ltfBot  = array.new<float>()
+var bool[]  ltfBull = array.new<bool>()
+var int[]   ltfBar  = array.new<int>()
+
+var float[] htfTop  = array.new<float>()
+var float[] htfBot  = array.new<float>()
+var bool[]  htfBull = array.new<bool>()
+var int[]   htfBar  = array.new<int>()
+
+trackFVG(ltfFVGTF, fvgMaxActive, ltfTop, ltfBot, ltfBull, ltfBar)
+trackFVG(htfFVGTF, fvgMaxActive, htfTop, htfBot, htfBull, htfBar)
+
+// ----------------------------------------------------------------------------
+// 5) CONFLUENCE + REJECTION CANDLE -> SETUP FINDER
+//    Default confluence rule: 1m FVG price range overlaps an active 5m FVG.
+//    Also requires the 1m FVG to overlap the 1H Gann box retracement zone,
+//    so the trade fires exactly at the level defined in step 2/3.
+// ----------------------------------------------------------------------------
+findSetup(isBull, gannLow, gannHigh) =>
+    body      = math.abs(close - open)
+    lowerWick = math.min(open, close) - low
+    upperWick = high - math.max(open, close)
+
+    foundTop = float(na)
+    foundBot = float(na)
+    found    = false
+
+    n = array.size(ltfTop)
+    if n > 0
+        for i = 0 to n - 1
+            if array.get(ltfBull, i) == isBull and (bar_index - array.get(ltfBar, i)) <= fvgMaxAge
+                t1 = array.get(ltfTop, i)
+                b1 = array.get(ltfBot, i)
+                gannOverlap = math.max(b1, gannLow) <= math.min(t1, gannHigh)
+                if gannOverlap
+                    conf = false
+                    m = array.size(htfTop)
+                    if m > 0
+                        for j = 0 to m - 1
+                            if array.get(htfBull, j) == isBull and (bar_index - array.get(htfBar, j)) <= fvgMaxAge
+                                t5 = array.get(htfTop, j)
+                                b5 = array.get(htfBot, j)
+                                if math.max(b1, b5) <= math.min(t1, t5)
+                                    conf := true
+                    if conf
+                        touched = low <= t1 and high >= b1
+                        rej = isBull ?
+                             (close > open and lowerWick >= body * rejWickFactor and touched) :
+                             (close < open and upperWick >= body * rejWickFactor and touched)
+                        if rej
+                            found    := true
+                            foundTop := t1
+                            foundBot := b1
+    [found, foundTop, foundBot]
+
+[longFVGFound,  longFvgTop,  longFvgBot]  = findSetup(true,  longZoneLow,  longZoneHigh)
+[shortFVGFound, shortFvgTop, shortFvgBot] = findSetup(false, shortZoneLow, shortZoneHigh)
+
+barGate = useConfirmedBar ? barstate.isconfirmed : true
+
+longSignal  = longSetupActive  and stopHuntLongActive  and longFVGFound  and barGate and strategy.position_size <= 0
+shortSignal = shortSetupActive and stopHuntShortActive and shortFVGFound and barGate and strategy.position_size >= 0
+
+// ----------------------------------------------------------------------------
+// 6) RISK MANAGEMENT + WEBHOOK ALERT PAYLOADS
+// ----------------------------------------------------------------------------
+webhookSymbolStr = webhookSymbol == "" ? syminfo.ticker : webhookSymbol
+
+if longSignal
+    slPrice = lastLongHuntLow - slBufferTicks * syminfo.mintick
+    risk    = close - slPrice
+    tpPrice = close + risk * rrMultiple
+    longMsg = str.format(
+         '{{"action":"buy","symbol":"{0}","side":"long","price":{1},"sl":{2},"tp":{3},"qty":{4},"strategy":"ICT-MTF-Confluence","time":"{5}"}}',
+         webhookSymbolStr, close, slPrice, tpPrice, qtyForAlert, str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ"))
+    exitMsg = str.format(
+         '{{"action":"close","symbol":"{0}","side":"long","strategy":"ICT-MTF-Confluence"}}', webhookSymbolStr)
+    strategy.entry("Long", strategy.long, alert_message = longMsg)
+    strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+
+if shortSignal
+    slPrice = lastShortHuntHigh + slBufferTicks * syminfo.mintick
+    risk    = slPrice - close
+    tpPrice = close - risk * rrMultiple
+    shortMsg = str.format(
+         '{{"action":"sell","symbol":"{0}","side":"short","price":{1},"sl":{2},"tp":{3},"qty":{4},"strategy":"ICT-MTF-Confluence","time":"{5}"}}',
+         webhookSymbolStr, close, slPrice, tpPrice, qtyForAlert, str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ"))
+    exitMsg = str.format(
+         '{{"action":"close","symbol":"{0}","side":"short","strategy":"ICT-MTF-Confluence"}}', webhookSymbolStr)
+    strategy.entry("Short", strategy.short, alert_message = shortMsg)
+    strategy.exit("Short Exit", from_entry = "Short", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
+
+// ----------------------------------------------------------------------------
+// 7) VISUALS
+// ----------------------------------------------------------------------------
+bgcolor(showBg ? (trendBullish ? color.new(color.green, 92) : trendBearish ? color.new(color.red, 92) : na) : na)
+
+plot(showZoneLines and trendBullish ? longZoneLow  : na, "Long Zone Low",  color.new(color.lime, 0),  style = plot.style_linebr)
+plot(showZoneLines and trendBullish ? longZoneHigh : na, "Long Zone High", color.new(color.lime, 0),  style = plot.style_linebr)
+plot(showZoneLines and trendBearish ? shortZoneLow  : na, "Short Zone Low",  color.new(color.red, 0), style = plot.style_linebr)
+plot(showZoneLines and trendBearish ? shortZoneHigh : na, "Short Zone High", color.new(color.red, 0), style = plot.style_linebr)
+
+plotshape(longSignal,  "Long Signal",  shape.triangleup,   location.belowbar, color.lime, size = size.small)
+plotshape(shortSignal, "Short Signal", shape.triangledown, location.abovebar, color.red,  size = size.small)
+
+if showTable
+    var table statusTbl = table.new(position.top_right, 2, 7, border_width = 1)
+    if barstate.islast
+        table.cell(statusTbl, 0, 0, "4H Trend",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 0, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? color.green : trendBearish ? color.red : color.gray, text_color = color.white)
+        table.cell(statusTbl, 0, 1, "1H Momentum",  bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 1, bullishBodyShift ? "Bull Shift" : bearishBodyShift ? "Bear Shift" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 2, "Gann Zone",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 2, longSetupActive ? "Long Active" : shortSetupActive ? "Short Active" : "Inactive", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 3, "Stop Hunt",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 3, stopHuntLongActive ? "Long Sweep" : stopHuntShortActive ? "Short Sweep" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 4, "1m/5m FVG",     bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 4, longFVGFound ? "Long Confluent" : shortFVGFound ? "Short Confluent" : "None", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 5, "Position",      bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 5, strategy.position_size > 0 ? "Long" : strategy.position_size < 0 ? "Short" : "Flat", text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 6, "Last Signal",   bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 6, longSignal ? "LONG" : shortSignal ? "SHORT" : "-", text_color = color.white, bgcolor = color.new(color.black, 0))
