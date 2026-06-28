@@ -72,9 +72,14 @@ showTradeBoxes = input.bool(true, "Show Entry/TP/SL Boxes", group = grpVis)
 boxExtendBars  = input.int(30, "Box Min Width (bars)", group = grpVis)
 
 grpLimits = "Step 8 - Session & Risk Limits (Optional, all default Off)"
-enableSessionFilter = input.bool(false, "Session Time Filter", tooltip = "Off = trade any time of day. On = only allow entries inside the session window below.", group = grpLimits)
-sessionInput         = input.session("0700-1700", "Trading Session", group = grpLimits)
-sessionTimezone       = input.string("UTC", "Session Timezone (e.g. UTC, America/New_York)", group = grpLimits)
+enableSessionFilter = input.bool(false, "Session Time Filter", tooltip = "Off = trade any time of day. On = only allow entries inside any session window enabled below.", group = grpLimits)
+sessionTimezone     = input.string("UTC", "Session Timezone (e.g. UTC, America/New_York)", group = grpLimits)
+enableAsiaSession   = input.bool(false, "Asia Session", group = grpLimits)
+asiaSessionInput    = input.session("0000-0900", "Asia Session Hours", group = grpLimits)
+enableLondonSession = input.bool(false, "London Session", group = grpLimits)
+londonSessionInput  = input.session("0800-1700", "London Session Hours", group = grpLimits)
+enableNYSession     = input.bool(false, "New York Session", group = grpLimits)
+nySessionInput      = input.session("1300-2200", "New York Session Hours", group = grpLimits)
 enableDailyLimit     = input.bool(false, "Daily Trade / Loss Limit", tooltip = "Off = no daily cap. On = blocks new entries once max trades/day or max daily loss % (from equity at day start) is hit.", group = grpLimits)
 maxDailyTrades       = input.int(10, "Max Trades Per Day", minval = 1, group = grpLimits)
 maxDailyLossPct      = input.float(2.0, "Max Daily Loss % (of day-start equity)", minval = 0.1, group = grpLimits)
@@ -210,7 +215,11 @@ retestShortTouch = retestShortActive and high >= lastBreakoutLowLevel  - retestT
 // 4B) SESSION & RISK LIMITS (Step 8 inputs — all default Off, so existing
 //     behavior is unaffected unless one is switched on)
 // ----------------------------------------------------------------------------
-inSession = not enableSessionFilter or not na(time(timeframe.period, sessionInput, sessionTimezone))
+inAsiaSession     = enableAsiaSession   and not na(time(timeframe.period, asiaSessionInput,   sessionTimezone))
+inLondonSession   = enableLondonSession and not na(time(timeframe.period, londonSessionInput, sessionTimezone))
+inNYSession       = enableNYSession     and not na(time(timeframe.period, nySessionInput,     sessionTimezone))
+anySessionEnabled = enableAsiaSession or enableLondonSession or enableNYSession
+inSession = not enableSessionFilter or not anySessionEnabled or inAsiaSession or inLondonSession or inNYSession
 
 newDay = ta.change(dayofmonth(time)) != 0
 var float dayStartEquity = strategy.initial_capital
