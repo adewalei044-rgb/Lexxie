@@ -1,0 +1,388 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+
+//@version=5
+strategy(
+  'Alchemist',
+  shorttitle              = 'Alchemist',
+  overlay                 = true,
+  explicit_plot_zorder    = true,
+  pyramiding              = 0,
+  default_qty_type        = strategy.fixed,
+  default_qty_value       = 1,
+  calc_on_every_tick      = false,
+  process_orders_on_close = true,
+  max_labels_count        = 500,
+  max_lines_count         = 500,
+  max_boxes_count         = 500)
+
+// =========================================================================
+// INPUTS — Multi-Timeframe
+// =========================================================================
+// Confirmation cascades top-down (HTF1 -> HTF2 -> HTF3); the actual entry
+// trigger fires on the chart's own bars, which must be the Entry Timeframe.
+htf1                       = input.timeframe('240',  'Confirmation TF 1 (Highest)',          group = 'Multi-Timeframe')
+htf2                       = input.timeframe('60',   'Confirmation TF 2',                    group = 'Multi-Timeframe')
+htf3                       = input.timeframe('15',   'Confirmation TF 3 (Range / POI)',      group = 'Multi-Timeframe')
+entryTF                    = input.timeframe('5',    'Entry Timeframe (chart must match)',   group = 'Multi-Timeframe', tooltip = 'Apply this strategy to a chart of this timeframe. Trading is disabled if the chart timeframe does not match.')
+
+// =========================================================================
+// INPUTS — Structure
+// =========================================================================
+htfSwingLen                = input.int(5,           'Structure Swing Length (HTF1/HTF2/HTF3)', group = 'Structure', minval = 2)
+microSwingLen              = input.int(3,           'Micro Swing Length (Entry Trigger, on Entry TF)', group = 'Structure', minval = 1)
+showStructureLabels        = input.bool(true,       'Show Strong/Weak Labels', group = 'Structure')
+
+// =========================================================================
+// INPUTS — Trading Range
+// =========================================================================
+showRange                  = input.bool(true,       'Show Trading Range Box',   group = 'Trading Range')
+showEquilibrium            = input.bool(true,       'Show Equilibrium Line',    group = 'Trading Range')
+eqLevel                    = input.float(50,        'Equilibrium Level (%)',    group = 'Trading Range', minval = 1, maxval = 99, tooltip = 'Threshold inside the trading range that separates discount from premium. 50 = midpoint.')
+requireDiscountPremium     = input.bool(true,       'Require POI On Correct Side Of Equilibrium', group = 'Trading Range', tooltip = 'Longs only look for setups below equilibrium (discount), shorts only above it (premium).')
+
+// =========================================================================
+// INPUTS — Sessions
+// =========================================================================
+sessTz                     = input.string('UTC',    'Session Timezone', group = 'Sessions')
+useKillZoneOnly            = input.bool(true,       'Only Trade Inside Kill Zones', group = 'Sessions')
+londonKZ                   = input.session('0700-1000', 'London Kill Zone', group = 'Sessions')
+nyKZ                       = input.session('1230-1500', 'New York Kill Zone', group = 'Sessions')
+useAsiaExclude             = input.bool(true,       'Exclude Asia Session', group = 'Sessions')
+asiaSession                = input.session('0000-0700', 'Asia Session', group = 'Sessions')
+
+// =========================================================================
+// INPUTS — Risk
+// =========================================================================
+allowLongs                 = input.bool(true,       'Allow Longs',  group = 'Risk')
+allowShorts                 = input.bool(true,       'Allow Shorts', group = 'Risk')
+slMode                      = input.string('POI (Tight)', 'Stop Loss Reference', options = ['POI (Tight)', 'Strong Level (Range Anchor)'], group = 'Risk')
+slBufferAtr                 = input.float(0.1,       'Stop Buffer (x ATR beyond reference)', group = 'Risk', minval = 0)
+atrLen                      = input.int(14,          'ATR Length', group = 'Risk', minval = 1)
+riskPct                     = input.float(1.0,       'Risk % Per Trade (Normal)',  group = 'Risk', minval = 0.01)
+reducedRiskPct              = input.float(0.5,       'Risk % Per Trade (Reduced)', group = 'Risk', minval = 0.01)
+atrRiskThreshold             = input.float(2.0,       'Reduce Risk Beyond (x ATR stop distance)', group = 'Risk', minval = 0.1)
+partialRR                    = input.float(1.0,       'Partial TP at R-Multiple', group = 'Risk', minval = 0.1)
+partialPct                   = input.float(50,        'Partial TP Size (%)', group = 'Risk', minval = 1, maxval = 99)
+
+atrValue                    = ta.atr(atrLen)
+
+inAsia                      = not na(time(timeframe.period, asiaSession, sessTz))
+inLondon                    = not na(time(timeframe.period, londonKZ,    sessTz))
+inNY                        = not na(time(timeframe.period, nyKZ,        sessTz))
+inKillZone                  = inLondon or inNY
+sessionOK                   = (not useKillZoneOnly or inKillZone) and (not useAsiaExclude or not inAsia)
+
+chartTFMatchesEntry          = timeframe.in_seconds() == timeframe.in_seconds(entryTF)
+
+// =========================================================================
+// STRUCTURE FUNCTION — swing pivots, liquidity sweeps, strong/weak high/low,
+// trend direction. Stamped with bar TIME (not bar_index) so the result can
+// be safely compared against other timeframes when run through
+// request.security() for the HTF confirmation legs below.
+// =========================================================================
+f_pivotStructure(len) =>
+    var float ph1               = na
+    var float pl1                = na
+    var int   trendDir           = 0
+
+    var float strongHigh         = na
+    var int   strongHighTime     = na
+    var float strongLow          = na
+    var int   strongLowTime      = na
+    var float weakHigh           = na
+    var int   weakHighTime       = na
+    var float weakLow            = na
+    var int   weakLowTime        = na
+
+    var float pendHighVal        = na
+    var int   pendHighTime       = na
+    var bool  pendHighSweep      = false
+    var bool  pendHighActive     = false
+    var float pendLowVal         = na
+    var int   pendLowTime        = na
+    var bool  pendLowSweep       = false
+    var bool  pendLowActive      = false
+
+    strongLowConfirmed           = false
+    weakLowConfirmed             = false
+    strongHighConfirmed          = false
+    weakHighConfirmed            = false
+
+    ph                           = ta.pivothigh(len, len)
+    pl                           = ta.pivotlow(len, len)
+
+    if pendLowActive and not na(ph1)
+        if close > ph1
+            if pendLowSweep
+                strongLow          := pendLowVal
+                strongLowTime      := pendLowTime
+                strongLowConfirmed := true
+            trendDir               := 1
+            pendLowActive          := false
+        else if close < pendLowVal
+            if not pendLowSweep
+                weakLow            := pendLowVal
+                weakLowTime        := pendLowTime
+                weakLowConfirmed   := true
+            pendLowActive          := false
+
+    if pendHighActive and not na(pl1)
+        if close < pl1
+            if pendHighSweep
+                strongHigh          := pendHighVal
+                strongHighTime      := pendHighTime
+                strongHighConfirmed := true
+            trendDir                := -1
+            pendHighActive          := false
+        else if close > pendHighVal
+            if not pendHighSweep
+                weakHigh            := pendHighVal
+                weakHighTime        := pendHighTime
+                weakHighConfirmed   := true
+            pendHighActive          := false
+
+    if not na(ph)
+        sweepHigh             = not na(ph1) and ph > ph1
+        ph1                   := ph
+        pendHighVal           := ph1
+        pendHighTime          := time[len]
+        pendHighSweep         := sweepHigh
+        pendHighActive        := true
+
+    if not na(pl)
+        sweepLow              = not na(pl1) and pl < pl1
+        pl1                   := pl
+        pendLowVal            := pl1
+        pendLowTime           := time[len]
+        pendLowSweep          := sweepLow
+        pendLowActive         := true
+
+    [trendDir, strongHigh, strongHighTime, strongLow, strongLowTime, weakHigh, weakHighTime, weakLow, weakLowTime, strongLowConfirmed, weakLowConfirmed, strongHighConfirmed, weakHighConfirmed]
+
+// =========================================================================
+// MULTI-TIMEFRAME CONFIRMATION — HTF1/HTF2 are pure trend-bias filters;
+// HTF3 additionally supplies the trading range / POI structure that used
+// to come from the chart's own timeframe. lookahead_off keeps historical
+// bars from seeing a not-yet-closed HTF bar (same behavior as realtime).
+// =========================================================================
+[trendDir4h, _, _, _, _, _, _, _, _, _, _, _, _] = request.security(syminfo.tickerid, htf1, f_pivotStructure(htfSwingLen), lookahead = barmerge.lookahead_off)
+[trendDir1h, _, _, _, _, _, _, _, _, _, _, _, _] = request.security(syminfo.tickerid, htf2, f_pivotStructure(htfSwingLen), lookahead = barmerge.lookahead_off)
+[trendDir15, strongHigh15, strongHighTime15, strongLow15, strongLowTime15, weakHigh15, weakHighTime15, weakLow15, weakLowTime15, strongLowConfirmed15, weakLowConfirmed15, strongHighConfirmed15, weakHighConfirmed15] = request.security(syminfo.tickerid, htf3, f_pivotStructure(htfSwingLen), lookahead = barmerge.lookahead_off)
+
+longCascadeOK                = trendDir4h == 1  and trendDir1h == 1  and trendDir15 == 1
+shortCascadeOK                = trendDir4h == -1 and trendDir1h == -1 and trendDir15 == -1
+
+// =========================================================================
+// TRADING RANGE — anchored to the most recently confirmed HTF3 strong low/high
+// =========================================================================
+haveRange                   = not na(strongHigh15) and not na(strongLow15)
+rangeTop                     = haveRange ? math.max(strongHigh15, strongLow15) : na
+rangeBottom                  = haveRange ? math.min(strongHigh15, strongLow15) : na
+equilibrium                  = haveRange ? rangeBottom + (rangeTop - rangeBottom) * eqLevel / 100 : na
+
+var float prevRangeTop      = na
+var float prevRangeBottom   = na
+rangeChanged                  = haveRange and (rangeTop != prevRangeTop or rangeBottom != prevRangeBottom)
+if rangeChanged
+    prevRangeTop              := rangeTop
+    prevRangeBottom           := rangeBottom
+
+// =========================================================================
+// ENTRY TRIGGER — touch a reference POI from HTF3 (weak pivot, or the sweep
+// pivot of a strong level), then require a faster micro-structure BOS on the
+// Entry Timeframe (the chart) in trade direction.
+// =========================================================================
+mph                          = ta.pivothigh(microSwingLen, microSwingLen)
+mpl                          = ta.pivotlow(microSwingLen, microSwingLen)
+
+var float mph1               = na
+var int   mph1Time           = na
+var float mpl1               = na
+var int   mpl1Time           = na
+
+if not na(mph)
+    mph1                     := mph
+    mph1Time                 := time[microSwingLen]
+if not na(mpl)
+    mpl1                     := mpl
+    mpl1Time                 := time[microSwingLen]
+
+// --- long/short reference POI: latest confirmed weak or strong HTF3 pivot on that side ---
+var float longRefLevel       = na
+var int   longRefTime        = na
+var float shortRefLevel      = na
+var int   shortRefTime       = na
+
+if strongLowConfirmed15 or weakLowConfirmed15
+    longRefLevel             := strongLowConfirmed15 ? strongLow15 : weakLow15
+    longRefTime              := strongLowConfirmed15 ? strongLowTime15 : weakLowTime15
+
+if strongHighConfirmed15 or weakHighConfirmed15
+    shortRefLevel            := strongHighConfirmed15 ? strongHigh15 : weakHigh15
+    shortRefTime             := strongHighConfirmed15 ? strongHighTime15 : weakHighTime15
+
+longDiscountOK                = not requireDiscountPremium or (not na(equilibrium) and longRefLevel < equilibrium)
+shortPremiumOK                = not requireDiscountPremium or (not na(equilibrium) and shortRefLevel > equilibrium)
+
+// --- arm/confirm state machine ---
+var bool  longArmed           = false
+var float longArmLevel        = na
+var int   longUsedRefTime     = na
+var float longArmTouchLow     = na
+var bool  shortArmed          = false
+var float shortArmLevel       = na
+var int   shortUsedRefTime    = na
+var float shortArmTouchHigh   = na
+
+longSignal                    = false
+shortSignal                   = false
+
+if not longArmed and not na(longRefLevel) and longCascadeOK and longDiscountOK and (na(longUsedRefTime) or longRefTime != longUsedRefTime) and low <= longRefLevel
+    longArmed                 := true
+    longArmLevel               := na
+    longUsedRefTime            := longRefTime
+    longArmTouchLow            := low
+
+if longArmed
+    longArmTouchLow            := math.min(longArmTouchLow, low)
+    if not na(mph1) and mph1Time > longUsedRefTime and (na(longArmLevel) or mph1 > longArmLevel)
+        longArmLevel            := mph1
+    if not na(longArmLevel) and close > longArmLevel
+        longSignal              := true
+        longArmed                := false
+    else if not longCascadeOK or (not na(rangeBottom) and close < rangeBottom)
+        longArmed                := false
+
+if not shortArmed and not na(shortRefLevel) and shortCascadeOK and shortPremiumOK and (na(shortUsedRefTime) or shortRefTime != shortUsedRefTime) and high >= shortRefLevel
+    shortArmed                  := true
+    shortArmLevel                := na
+    shortUsedRefTime             := shortRefTime
+    shortArmTouchHigh            := high
+
+if shortArmed
+    shortArmTouchHigh            := math.max(shortArmTouchHigh, high)
+    if not na(mpl1) and mpl1Time > shortUsedRefTime and (na(shortArmLevel) or mpl1 < shortArmLevel)
+        shortArmLevel             := mpl1
+    if not na(shortArmLevel) and close < shortArmLevel
+        shortSignal               := true
+        shortArmed                 := false
+    else if not shortCascadeOK or (not na(rangeTop) and close > rangeTop)
+        shortArmed                 := false
+
+// =========================================================================
+// ORDER PLACEMENT — risk-based size, tiered risk by ATR stop distance,
+// partial TP at an R-multiple, runner to the opposite side of the range
+// =========================================================================
+canTrade                      = haveRange and sessionOK and chartTFMatchesEntry
+
+var float stopPriceL          = na
+var float partialTPL          = na
+var float finalTPL            = na
+var float qtyL                = na
+
+var float stopPriceS          = na
+var float partialTPS          = na
+var float finalTPS            = na
+var float qtyS                = na
+
+longStopRef                   = slMode == 'POI (Tight)' ? longArmTouchLow  : rangeBottom
+shortStopRef                  = slMode == 'POI (Tight)' ? shortArmTouchHigh : rangeTop
+
+if longSignal and allowLongs and canTrade and strategy.position_size <= 0 and not na(longStopRef)
+    entryPriceL                = close
+    stopPriceL                 := longStopRef - atrValue * slBufferAtr
+    stopDistL                  = entryPriceL - stopPriceL
+    riskTierL                  = stopDistL > atrValue * atrRiskThreshold ? reducedRiskPct : riskPct
+    qtyL                       := stopDistL > 0 ? (strategy.equity * riskTierL / 100) / stopDistL : na
+    partialTPL                 := entryPriceL + stopDistL * partialRR
+    finalTPL                   := rangeTop
+    if not na(qtyL) and qtyL > 0 and barstate.isconfirmed
+        strategy.entry('Long', strategy.long, qty = qtyL, comment = 'LE')
+
+if strategy.position_size > 0 and not na(stopPriceL)
+    strategy.exit('LX1', from_entry = 'Long', qty_percent = partialPct, limit = partialTPL, stop = stopPriceL, comment_profit = 'LX-Partial', comment_loss = 'SL')
+    strategy.exit('LX2', from_entry = 'Long', qty_percent = 100,        limit = finalTPL,   stop = stopPriceL, comment_profit = 'LX-Runner',  comment_loss = 'SL')
+
+if shortSignal and allowShorts and canTrade and strategy.position_size >= 0 and not na(shortStopRef)
+    entryPriceS                = close
+    stopPriceS                  := shortStopRef + atrValue * slBufferAtr
+    stopDistS                   = stopPriceS - entryPriceS
+    riskTierS                   = stopDistS > atrValue * atrRiskThreshold ? reducedRiskPct : riskPct
+    qtyS                        := stopDistS > 0 ? (strategy.equity * riskTierS / 100) / stopDistS : na
+    partialTPS                  := entryPriceS - stopDistS * partialRR
+    finalTPS                    := rangeBottom
+    if not na(qtyS) and qtyS > 0 and barstate.isconfirmed
+        strategy.entry('Short', strategy.short, qty = qtyS, comment = 'SE')
+
+if strategy.position_size < 0 and not na(stopPriceS)
+    strategy.exit('SX1', from_entry = 'Short', qty_percent = partialPct, limit = partialTPS, stop = stopPriceS, comment_profit = 'SX-Partial', comment_loss = 'SL')
+    strategy.exit('SX2', from_entry = 'Short', qty_percent = 100,        limit = finalTPS,   stop = stopPriceS, comment_profit = 'SX-Runner',  comment_loss = 'SL')
+
+// =========================================================================
+// VISUALS — drawn with xloc.bar_time since the anchors now come from HTF3
+// (a different timeframe than the chart), so bar_index would not line up.
+// =========================================================================
+rangeAnchorTime               = haveRange ? math.max(strongHighTime15, strongLowTime15) : na
+
+var box   rangeBoxId          = na
+var line  eqLineId            = na
+
+if showRange and haveRange
+    if na(rangeBoxId)
+        rangeBoxId            := box.new(left = rangeAnchorTime, top = rangeTop, right = time, bottom = rangeBottom,
+          xloc = xloc.bar_time, border_color = color.new(color.blue, 60), bgcolor = color.new(color.blue, 92))
+    else
+        if rangeChanged
+            box.set_left(rangeBoxId, rangeAnchorTime)
+        box.set_top(rangeBoxId, rangeTop)
+        box.set_bottom(rangeBoxId, rangeBottom)
+        box.set_right(rangeBoxId, time)
+
+if showEquilibrium and haveRange
+    if na(eqLineId)
+        eqLineId               := line.new(x1 = rangeAnchorTime, y1 = equilibrium, x2 = time, y2 = equilibrium,
+          xloc = xloc.bar_time, color = color.new(color.gray, 40), style = line.style_dashed)
+    else
+        if rangeChanged
+            line.set_xy1(eqLineId, rangeAnchorTime, equilibrium)
+        line.set_xy2(eqLineId, time, equilibrium)
+
+// Dedupe guards: HTF3 "confirmed" flags hold true across every Entry-TF bar
+// inside the same still-forming HTF3 bar, so without this each pivot would
+// otherwise stamp a new, overlapping label on every one of those bars.
+var int lastStrongLowLabelTime  = na
+var int lastWeakLowLabelTime    = na
+var int lastStrongHighLabelTime = na
+var int lastWeakHighLabelTime   = na
+
+if showStructureLabels and strongLowConfirmed15 and strongLowTime15 != lastStrongLowLabelTime
+    label.new(x = strongLowTime15, y = strongLow15, xloc = xloc.bar_time, text = 'Strong Low', style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+    lastStrongLowLabelTime      := strongLowTime15
+if showStructureLabels and weakLowConfirmed15 and weakLowTime15 != lastWeakLowLabelTime
+    label.new(x = weakLowTime15, y = weakLow15, xloc = xloc.bar_time, text = 'Weak Low', style = label.style_label_up, color = color.new(color.orange, 0), textcolor = color.white, size = size.tiny)
+    lastWeakLowLabelTime        := weakLowTime15
+if showStructureLabels and strongHighConfirmed15 and strongHighTime15 != lastStrongHighLabelTime
+    label.new(x = strongHighTime15, y = strongHigh15, xloc = xloc.bar_time, text = 'Strong High', style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+    lastStrongHighLabelTime     := strongHighTime15
+if showStructureLabels and weakHighConfirmed15 and weakHighTime15 != lastWeakHighLabelTime
+    label.new(x = weakHighTime15, y = weakHigh15, xloc = xloc.bar_time, text = 'Weak High', style = label.style_label_down, color = color.new(color.orange, 0), textcolor = color.white, size = size.tiny)
+    lastWeakHighLabelTime       := weakHighTime15
+
+if barstate.islast and not chartTFMatchesEntry
+    label.new(bar_index, high, text = 'Alchemist: chart timeframe must match the Entry Timeframe input (' + entryTF + ') — trading disabled', style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+
+plotshape(longSignal,  title = 'Long Signal',  style = shape.triangleup,   location = location.belowbar, color = color.green, size = size.small)
+plotshape(shortSignal, title = 'Short Signal', style = shape.triangledown, location = location.abovebar, color = color.red,   size = size.small)
+
+plot(strategy.position_size > 0 ? stopPriceL : strategy.position_size < 0 ? stopPriceS : na,
+  title = 'Stop',       color = color.red,    style = plot.style_linebr, linewidth = 1)
+plot(strategy.position_size > 0 ? partialTPL : strategy.position_size < 0 ? partialTPS : na,
+  title = 'Partial TP', color = color.yellow, style = plot.style_linebr, linewidth = 1)
+plot(strategy.position_size > 0 ? finalTPL   : strategy.position_size < 0 ? finalTPS   : na,
+  title = 'Final TP',   color = color.green,  style = plot.style_linebr, linewidth = 1)
+
+// =========================================================================
+// ALERTS
+// =========================================================================
+alertcondition(longSignal,  title = 'Alchemist Long Signal',  message = 'Alchemist: long entry signal')
+alertcondition(shortSignal, title = 'Alchemist Short Signal', message = 'Alchemist: short entry signal')
