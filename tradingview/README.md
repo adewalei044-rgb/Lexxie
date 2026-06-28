@@ -13,6 +13,18 @@
 - **Stop-loss / take-profit**: SL is placed just beyond the stop-hunt wick that swept liquidity (plus a small tick buffer), TP is a configurable risk:reward multiple of that distance (default 2R). Both are inputs under "6) Risk Management" — change `rrMultiple` and `slBufferTicks`, or rewire the `strategy.exit()` calls if you'd rather use the FVG boundary or a fixed percentage instead.
 - **FVG confluence rule**: defined as price-range overlap between the 1m FVG and an active 5m FVG (not strict containment, not a distance tolerance). Adjust the overlap check in `findSetup()` if you want stricter containment instead.
 
+## If you're seeing 0 trades / all-zero stats
+
+The status table's Win/Loss/Win%/Drawdown rows only change once a trade closes, and the BUY/SELL labels only draw when `longSignal`/`shortSignal` fires. If those are all blank or zero, it almost always means the strategy hasn't found a single bar where **every** stage of the confluence chain (4H trend, 1H momentum shift, Gann zone, 1m stop hunt, FVG confluence, rejection wick) was true at once — not a bug, just a very strict setup.
+
+The table now includes diagnostic counters (Total Bars, Trend Bars, Momentum Events, Zone Touch Bars, Stop Hunt Events, FVG Confluences) so you can see which stage is the bottleneck:
+
+- **Trend Bars** close to **Total Bars** but **Momentum Events** near 0 → your instrument rarely produces clean non-overlapping 1H candle bodies; consider a more volatile pair or longer backtest range.
+- **Zone Touch Bars** near 0 → price rarely retraces into the 0.5–0.75 / 0.25–0.5 box; check `longZoneLowPct`/`longZoneHighPct` inputs.
+- **Stop Hunt Events** near 0 → widen `huntLookback`/`huntValidBars`.
+- **FVG Confluences** near 0 even though the other counters are healthy → 1m/5m FVGs rarely overlap each other and the Gann zone at the same time on this symbol; try a higher-volatility instrument or loosen `fvgMaxAge`/`rejWickFactor`.
+- All counters healthy but still 0 trades → the bottleneck is the *intersection* of all conditions on the same bar; this is expected for a 6-factor confluence model and may take a longer backtest window (more 1m bars) to produce its first trade.
+
 ## Setup on TradingView
 
 1. Add the script to a **1-minute chart** (the script pulls 4H/1H/5m data internally via `request.security`, so the chart timeframe only needs to match the entry/FVG timeframe inputs).

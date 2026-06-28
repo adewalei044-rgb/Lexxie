@@ -320,8 +320,30 @@ currentDrawdown = peakEquity - strategy.equity
 maxDrawdownVal := math.max(maxDrawdownVal, currentDrawdown)
 maxDrawdownPct = peakEquity > 0 ? (maxDrawdownVal / peakEquity) * 100.0 : 0.0
 
+// Diagnostic counters: how many bars/events satisfied each stage of the
+// confluence chain since the strategy started. Use these to find which
+// condition is the bottleneck if 0 trades are firing.
+var int totalBars       = 0
+var int trendBars       = 0
+var int momentumEvents  = 0
+var int zoneTouchBars   = 0
+var int stopHuntEvents  = 0
+var int fvgConfluences  = 0
+
+totalBars := totalBars + 1
+if trendBullish or trendBearish
+    trendBars := trendBars + 1
+if bullishBodyShift or bearishBodyShift
+    momentumEvents := momentumEvents + 1
+if priceInLongZone or priceInShortZone
+    zoneTouchBars := zoneTouchBars + 1
+if stopHuntLongRaw or stopHuntShortRaw
+    stopHuntEvents := stopHuntEvents + 1
+if longFVGFound or shortFVGFound
+    fvgConfluences := fvgConfluences + 1
+
 if showTable
-    var table statusTbl = table.new(position.top_right, 2, 11, border_width = 1)
+    var table statusTbl = table.new(position.top_right, 2, 17, border_width = 1)
     if barstate.islast
         table.cell(statusTbl, 0, 0, "4H Trend",     bgcolor = color.gray, text_color = color.white)
         table.cell(statusTbl, 1, 0, trendBullish ? "Bull" : trendBearish ? "Bear" : "Flat", bgcolor = trendBullish ? color.green : trendBearish ? color.red : color.gray, text_color = color.white)
@@ -345,3 +367,15 @@ if showTable
         table.cell(statusTbl, 1, 9, str.tostring(winPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.blue, 60))
         table.cell(statusTbl, 0, 10, "Max Drawdown", bgcolor = color.gray, text_color = color.white)
         table.cell(statusTbl, 1, 10, str.tostring(maxDrawdownPct, "#.##") + "%", text_color = color.white, bgcolor = color.new(color.orange, 60))
+        table.cell(statusTbl, 0, 11, "Total Bars",   bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 11, str.tostring(totalBars), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 12, "Trend Bars",   bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 12, str.tostring(trendBars), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 13, "Momentum Events", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 13, str.tostring(momentumEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 14, "Zone Touch Bars", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 14, str.tostring(zoneTouchBars), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 15, "Stop Hunt Events", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 15, str.tostring(stopHuntEvents), text_color = color.white, bgcolor = color.new(color.black, 0))
+        table.cell(statusTbl, 0, 16, "FVG Confluences", bgcolor = color.gray, text_color = color.white)
+        table.cell(statusTbl, 1, 16, str.tostring(fvgConfluences), text_color = color.white, bgcolor = color.new(color.black, 0))
