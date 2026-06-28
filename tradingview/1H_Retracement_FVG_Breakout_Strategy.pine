@@ -278,7 +278,7 @@ if longSignal
     strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
     dayTradeCount := dayTradeCount + 1
     if showTradeBoxes
-        [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice, false)
+        [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice, true)
         profitBox  := pb
         riskBox    := rb
         entryLabel := el
