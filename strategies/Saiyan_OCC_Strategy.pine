@@ -889,6 +889,7 @@ G_DISPLAY    = 'Display'
 //<display>
 i_alertOn    = input.bool       (true,      'Alert Labels On/Off'          , group = G_DISPLAY)
 i_barColOn   = input.bool       (true,      'Bar Color On/Off'             , group = G_DISPLAY)
+i_statsOn    = input.bool       (true,      'Stats Table On/Off'           , group = G_DISPLAY)
 
 // ——————————— <function_declarations>
 // @function        Calculate the Take Profit line, and the crossover or crossunder
@@ -1334,3 +1335,54 @@ if shortX
     alert(message = 'Short Exit',  freq = alert.freq_once_per_bar_close)
 //#endregion }
 // ——————————— <↑↑↑ G_SCRIPT03 ↑↑↑>
+
+//#region ———— <↓↓↓ G_STATS ↓↓↓> {
+G_STATS = '■ ' + 'Stats Table'
+
+// ——————————— <calculations>
+var float dayStartEquity   = strategy.equity
+var int   dailyWinCount    = 0
+var int   dailyLossCount   = 0
+var float peakEquity       = strategy.equity
+
+isNewDay = ta.change(time('D')) != 0
+if isNewDay
+    dayPnL = strategy.equity - dayStartEquity
+    if dayPnL > 0
+        dailyWinCount += 1
+    else if dayPnL < 0
+        dailyLossCount += 1
+    dayStartEquity := strategy.equity
+
+peakEquity   := math.max(peakEquity, strategy.equity)
+drawdownPct  =  peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100 : 0.0
+
+totalClosed  = strategy.closedtrades
+winRatePct   = totalClosed > 0 ? strategy.wintrades / totalClosed * 100 : 0.0
+
+// ——————————— <table>
+var table statsTable = table.new(
+  position.top_right, 2, 5,
+  border_width  = 1,
+  border_color  = color.gray,
+  frame_width   = 1,
+  frame_color   = color.gray,
+  bgcolor       = color.new(color.black, 15))
+
+if i_statsOn and barstate.islast
+    table.cell(statsTable, 0, 0, 'STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.merge_cells(statsTable, 0, 0, 1, 0)
+
+    table.cell(statsTable, 0, 1, 'Win Rate',         text_color = color.white, text_halign = text.align_left)
+    table.cell(statsTable, 1, 1, str.tostring(winRatePct, '#.##') + '%', text_color = color.white, text_halign = text.align_right)
+
+    table.cell(statsTable, 0, 2, 'Win / Loss',       text_color = color.white, text_halign = text.align_left)
+    table.cell(statsTable, 1, 2, str.tostring(strategy.wintrades) + ' / ' + str.tostring(strategy.losstrades), text_color = color.white, text_halign = text.align_right)
+
+    table.cell(statsTable, 0, 3, 'Daily Win / Loss', text_color = color.white, text_halign = text.align_left)
+    table.cell(statsTable, 1, 3, str.tostring(dailyWinCount) + ' / ' + str.tostring(dailyLossCount), text_color = color.white, text_halign = text.align_right)
+
+    table.cell(statsTable, 0, 4, 'Draw Down',        text_color = color.white, text_halign = text.align_left, bgcolor = color.new(color.red, 60))
+    table.cell(statsTable, 1, 4, str.tostring(drawdownPct, '#.##') + '%', text_color = color.white, text_halign = text.align_right, bgcolor = color.new(color.red, 60))
+//#endregion }
+// ——————————— <↑↑↑ G_STATS ↑↑↑>
