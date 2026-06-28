@@ -324,6 +324,9 @@ plot(showZoneLines and trendBullish ? longZoneHigh  : na, "Long Zone High",  col
 plot(showZoneLines and trendBearish ? shortZoneLow  : na, "Short Zone Low",  color.new(color.red, 0),  style = plot.style_linebr)
 plot(showZoneLines and trendBearish ? shortZoneHigh : na, "Short Zone High", color.new(color.red, 0),  style = plot.style_linebr)
 
+plotshape(longSignal  ? low  : na, "Buy Entry Logo",  style = shape.labelup,   location = location.belowbar, color = color.lime, size = size.small, text = "BUY",  textcolor = color.black)
+plotshape(shortSignal ? high : na, "Sell Entry Logo", style = shape.labeldown, location = location.abovebar, color = color.red,  size = size.small, text = "SELL", textcolor = color.white)
+
 winTrades   = strategy.wintrades
 lossTrades  = strategy.losstrades
 totalClosed = strategy.closedtrades
