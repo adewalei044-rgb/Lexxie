@@ -248,12 +248,13 @@ drawTradeVisuals(isLong, entryPrice, sl, tp) =>
     profitBottom = isLong ? entryPrice : tp
     riskTop      = isLong ? entryPrice : sl
     riskBottom   = isLong ? sl : entryPrice
-    profitBox := box.new(bar_index, profitTop, rightBar, profitBottom, border_color = color.green, bgcolor = color.new(color.green, 85))
-    riskBox   := box.new(bar_index, riskTop, rightBar, riskBottom, border_color = color.red, bgcolor = color.new(color.red, 85))
-    entryLabel := label.new(bar_index, entryPrice,
+    newProfitBox = box.new(bar_index, profitTop, rightBar, profitBottom, border_color = color.green, bgcolor = color.new(color.green, 85))
+    newRiskBox   = box.new(bar_index, riskTop, rightBar, riskBottom, border_color = color.red, bgcolor = color.new(color.red, 85))
+    newLabel     = label.new(bar_index, entryPrice,
          str.format("{0}\nEntry {1}\nTP {2}\nSL {3}\nR:R 1:{4}", isLong ? "BUY" : "SELL", entryPrice, tp, sl, rrMultiple),
          style = isLong ? label.style_label_up : label.style_label_down,
          color = isLong ? color.green : color.red, textcolor = color.white, size = size.small)
+    [newProfitBox, newRiskBox, newLabel]
 
 if longSignal
     slPrice = lastLongHuntLow - slBufferTicks * syminfo.mintick
@@ -267,7 +268,10 @@ if longSignal
     strategy.entry("Long", strategy.long, alert_message = longMsg)
     strategy.exit("Long Exit", from_entry = "Long", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
     if showTradeBoxes
-        drawTradeVisuals(true, close, slPrice, tpPrice)
+        [pb, rb, el] = drawTradeVisuals(true, close, slPrice, tpPrice)
+        profitBox  := pb
+        riskBox    := rb
+        entryLabel := el
     else
         label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.green, textcolor = color.white, size = size.small)
 
@@ -283,7 +287,10 @@ if shortSignal
     strategy.entry("Short", strategy.short, alert_message = shortMsg)
     strategy.exit("Short Exit", from_entry = "Short", stop = slPrice, limit = tpPrice, alert_message = exitMsg)
     if showTradeBoxes
-        drawTradeVisuals(false, close, slPrice, tpPrice)
+        [pb, rb, el] = drawTradeVisuals(false, close, slPrice, tpPrice)
+        profitBox  := pb
+        riskBox    := rb
+        entryLabel := el
     else
         label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.red, textcolor = color.white, size = size.small)
 
