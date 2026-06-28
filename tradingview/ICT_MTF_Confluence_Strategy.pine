@@ -21,48 +21,50 @@ strategy("ICT MTF Confluence Strategy (4H Trend / 1H Gann Zone / 1m-5m FVG)",
 // =============================================================================
 
 // ----------------------------------------------------------------------------
-// INPUTS
+// INPUTS — grouped in the same order as the trading model steps below.
+// Tap the (i) icon next to any setting in TradingView for a plain-English
+// explanation of what it does and which direction loosens vs. tightens it.
 // ----------------------------------------------------------------------------
-grpTrend = "1) 4H Trend Filter"
-maLen    = input.int(200, "MA Length", group = grpTrend)
-maType   = input.string("EMA", "MA Type", options = ["EMA", "SMA"], group = grpTrend)
-trendTF  = input.timeframe("240", "Trend Timeframe", group = grpTrend)
+grpTrend = "Step 1 - Trend Filter (4H)"
+maLen    = input.int(200, "MA Length", tooltip = "How many 4H candles the trend average uses. Smaller = trend flips more often (more setups, less reliable). Larger = stricter trend, fewer setups.", group = grpTrend)
+maType   = input.string("EMA", "MA Type", options = ["EMA", "SMA"], tooltip = "EMA reacts faster to recent price than SMA.", group = grpTrend)
+trendTF  = input.timeframe("240", "Trend Timeframe", tooltip = "Timeframe used for the trend filter. Default 240 = 4 hours.", group = grpTrend)
 
-grp1h        = "2) 1H Momentum + Gann Box Zone"
-htfTF        = input.timeframe("60", "1H Signal Timeframe", group = grp1h)
-longZoneLowPct  = input.float(0.5,  "Long Zone Low (0-1 of candle range)",  step = 0.01, group = grp1h)
-longZoneHighPct = input.float(0.75, "Long Zone High (0-1 of candle range)", step = 0.01, group = grp1h)
-shortZoneLowPct = input.float(0.25, "Short Zone Low (0-1 of candle range)", step = 0.01, group = grp1h)
-shortZoneHighPct= input.float(0.5,  "Short Zone High (0-1 of candle range)",step = 0.01, group = grp1h)
-momentumOverlapPct = input.float(0.25, "Momentum Overlap Tolerance (0=strict no overlap)", minval = 0.0, maxval = 0.9, step = 0.05, group = grp1h)
+grp1h        = "Step 2 - Momentum + Entry Zone (1H)"
+htfTF        = input.timeframe("60", "1H Signal Timeframe", tooltip = "Timeframe used for momentum and the Gann box zone. Default 60 = 1 hour.", group = grp1h)
+longZoneLowPct  = input.float(0.5,  "Long Zone Low (0-1 of candle range)",  step = 0.01, tooltip = "Bottom edge of the pullback zone for longs, as a fraction of the 1H candle's range. Widen this range (lower this, raise the High) to make price qualify more often.", group = grp1h)
+longZoneHighPct = input.float(0.75, "Long Zone High (0-1 of candle range)", step = 0.01, tooltip = "Top edge of the pullback zone for longs.", group = grp1h)
+shortZoneLowPct = input.float(0.25, "Short Zone Low (0-1 of candle range)", step = 0.01, tooltip = "Bottom edge of the pullback zone for shorts.", group = grp1h)
+shortZoneHighPct= input.float(0.5,  "Short Zone High (0-1 of candle range)",step = 0.01, tooltip = "Top edge of the pullback zone for shorts. Widen this range to make price qualify more often.", group = grp1h)
+momentumOverlapPct = input.float(0.25, "Momentum Overlap Tolerance (0=strict no overlap)", minval = 0.0, maxval = 0.9, step = 0.05, tooltip = "0 = the 1H candle body must be fully clear of the prior candle's body (strictest). Raising this toward 0.9 allows more overlap, so momentum shifts trigger more easily.", group = grp1h)
 
-grpHunt       = "3) 1m Stop Hunt"
-huntLookback  = input.int(10, "Swing Lookback (bars)", group = grpHunt)
-huntValidBars = input.int(15, "Stop Hunt Stays Valid For (bars)", group = grpHunt)
+grpHunt       = "Step 3 - Stop Hunt (1m)"
+huntLookback  = input.int(10, "Swing Lookback (bars)", tooltip = "How many bars back to look for the swing high/low that price must sweep. Raising this finds sweeps more often.", group = grpHunt)
+huntValidBars = input.int(15, "Stop Hunt Stays Valid For (bars)", tooltip = "How many bars after a sweep the setup stays eligible. Raising this gives more time for the rest of the confluence to line up.", group = grpHunt)
 
-grpFVG        = "4) FVG + Multi-TF Confluence"
-ltfFVGTF      = input.timeframe("1", "Entry FVG Timeframe", group = grpFVG)
-htfFVGTF      = input.timeframe("5", "Confluence FVG Timeframe", group = grpFVG)
-fvgMaxAge     = input.int(50, "Max FVG / Stop-Hunt Age (bars)", group = grpFVG)
-fvgMaxActive  = input.int(20, "Max Tracked FVGs per Timeframe", group = grpFVG)
+grpFVG        = "Step 4 - Fair Value Gap Confluence (1m + 5m)"
+ltfFVGTF      = input.timeframe("1", "Entry FVG Timeframe", tooltip = "Timeframe used for the entry-trigger FVG. Default 1 = 1 minute.", group = grpFVG)
+htfFVGTF      = input.timeframe("5", "Confluence FVG Timeframe", tooltip = "Timeframe used for the confirming FVG. Default 5 = 5 minutes.", group = grpFVG)
+fvgMaxAge     = input.int(50, "Max FVG / Stop-Hunt Age (bars)", tooltip = "How many bars an FVG stays usable after it forms. Raising this keeps gaps active longer, increasing the chance of a match.", group = grpFVG)
+fvgMaxActive  = input.int(20, "Max Tracked FVGs per Timeframe", tooltip = "How many recent gaps are remembered at once. Raising this tracks more gaps simultaneously.", group = grpFVG)
 
-grpReject     = "5) Rejection Candle"
-rejWickFactor = input.float(1.5, "Min Wick-to-Body Ratio", step = 0.1, group = grpReject)
+grpReject     = "Step 5 - Entry Trigger (Rejection Candle)"
+rejWickFactor = input.float(1.5, "Min Wick-to-Body Ratio", step = 0.1, tooltip = "How much bigger the rejecting wick must be than the candle body. Lowering toward 1.0 makes the trigger easier to satisfy.", group = grpReject)
 
-grpRisk       = "6) Risk Management"
-rrMultiple    = input.float(2.0, "Reward : Risk Multiple", step = 0.1, group = grpRisk)
-slBufferTicks = input.float(2, "Extra SL Buffer (ticks beyond hunt wick)", group = grpRisk)
-useConfirmedBar = input.bool(true, "Only Trigger on Confirmed (Closed) Bar", group = grpRisk)
+grpRisk       = "Step 6 - Risk Management (SL / TP)"
+rrMultiple    = input.float(2.0, "Reward : Risk Multiple", step = 0.1, tooltip = "Take-profit distance as a multiple of the stop-loss distance, e.g. 2.0 = TP is 2x further than SL.", group = grpRisk)
+slBufferTicks = input.float(2, "Extra SL Buffer (ticks beyond hunt wick)", tooltip = "Extra cushion added beyond the stop-hunt wick when placing the stop-loss.", group = grpRisk)
+useConfirmedBar = input.bool(true, "Only Trigger on Confirmed (Closed) Bar", tooltip = "On = waits for the bar to fully close before triggering (safer, no repaint). Off = can trigger mid-bar (more signals, but the trigger bar can repaint).", group = grpRisk)
 
-grpWebhook    = "7) Webhook Alert Payload"
-webhookSymbol = input.string("", "Symbol Override for JSON (blank = chart ticker)", group = grpWebhook)
-qtyForAlert   = input.float(1, "Quantity field to send in JSON", group = grpWebhook)
+grpWebhook    = "Step 7 - Webhook Alert Payload"
+webhookSymbol = input.string("", "Symbol Override for JSON (blank = chart ticker)", tooltip = "Leave blank to use the chart's own ticker in the alert JSON, or type a custom symbol name to send instead.", group = grpWebhook)
+qtyForAlert   = input.float(1, "Quantity field to send in JSON", tooltip = "The qty value sent in the webhook JSON payload — for your receiving bot to read, does not affect this strategy's backtest sizing.", group = grpWebhook)
 
-grpVis        = "8) Visuals"
-showZoneLines = input.bool(true, "Show Gann Zone Lines", group = grpVis)
-showTable     = input.bool(true, "Show Status Table", group = grpVis)
-showTradeBoxes= input.bool(true, "Show Entry/TP/SL Boxes", group = grpVis)
-boxExtendBars = input.int(30, "Box Min Width (bars)", group = grpVis)
+grpVis        = "Step 8 - Display / Visuals"
+showZoneLines = input.bool(true, "Show Gann Zone Lines", tooltip = "Plot the long/short pullback zone lines on the chart.", group = grpVis)
+showTable     = input.bool(true, "Show Status Table", tooltip = "Show the on-chart table with win rate, stage status, and diagnostic counters.", group = grpVis)
+showTradeBoxes= input.bool(true, "Show Entry/TP/SL Boxes", tooltip = "Draw colored profit/risk boxes on each trade instead of a plain label.", group = grpVis)
+boxExtendBars = input.int(30, "Box Min Width (bars)", tooltip = "Minimum width (in bars) of the trade boxes drawn on entry.", group = grpVis)
 
 // ----------------------------------------------------------------------------
 // 1) 4H TREND FILTER
