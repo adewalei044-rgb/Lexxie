@@ -16,7 +16,7 @@ maxTradesPerDay = input.int(5, "Max Trades Per Day", minval=1, group="Trade Opti
 maxDailyLossPct = input.float(2.0, "Max Daily Loss %", minval=0.1, step=0.1, group="Trade Options")
 enableBreakeven = input.bool(true, "Move Stop to Breakeven After TP2", group="Trade Options")
 
-showZones   = input.bool(true, "Show Long/Short Zone Boxes", group="Display")
+showZones   = input.bool(true, "Show Bias Zone Shading", group="Display")
 showSignals = input.bool(true, "Show Buy/Sell Markers", group="Display")
 showLevels  = input.bool(true, "Show Entry/SL/TP Lines", group="Display")
 showTable   = input.bool(true, "Show Stats Table", group="Display")
@@ -112,107 +112,99 @@ if strategy.position_size < 0
     if enableTP3
         strategy.exit("Short TP3", from_entry="Short", qty_percent=100, limit=shortTP3, stop=shortTP3Stop)
 
-var box longBox = na
-var box shortBox = na
+var float longEntryLevel = na
+var float longSLLevel    = na
+var float longTP1Level   = na
+var float longTP2Level   = na
+var float longTP3Level   = na
 
-maxTPPercent = enableTP3 ? tp3Percent : enableTP2 ? tp2Percent : tp1Percent
+var float shortEntryLevel = na
+var float shortSLLevel    = na
+var float shortTP1Level   = na
+var float shortTP2Level   = na
+var float shortTP3Level   = na
 
-if showZones and longCondition
-    longBox := box.new(left=bar_index, top=close * (1 + maxTPPercent / 100), bottom=close * (1 - slPercent / 100), right=bar_index, bgcolor=color.new(#FFC0CB, 80), border_color=#FFC0CB, border_width=1)
+bullZoneStart = bullBias and not bullBias[1]
+bearZoneStart = bearBias and not bearBias[1]
 
-if showZones and shortCondition
-    shortBox := box.new(left=bar_index, top=close * (1 + slPercent / 100), bottom=close * (1 - maxTPPercent / 100), right=bar_index, bgcolor=color.new(color.black, 80), border_color=color.new(color.black, 30), border_width=1)
+if bullZoneStart
+    shortEntryLevel := na
+    shortSLLevel := na
+    shortTP1Level := na
+    shortTP2Level := na
+    shortTP3Level := na
 
-if showZones and strategy.position_size > 0 and not na(longBox)
-    box.set_right(longBox, bar_index)
+if bearZoneStart
+    longEntryLevel := na
+    longSLLevel := na
+    longTP1Level := na
+    longTP2Level := na
+    longTP3Level := na
 
-if showZones and strategy.position_size < 0 and not na(shortBox)
-    box.set_right(shortBox, bar_index)
+if longCondition
+    longEntryLevel := close
+    longSLLevel := close * (1 - slPercent / 100)
+    longTP1Level := close * (1 + tp1Percent / 100)
+    longTP2Level := close * (1 + tp2Percent / 100)
+    longTP3Level := close * (1 + tp3Percent / 100)
 
-var line entryLine = na
-var line slLine = na
-var line tp1Line = na
-var line tp2Line = na
-var line tp3Line = na
-var label entryLabel = na
-var label slLabel = na
-var label tp1Label = na
-var label tp2Label = na
-var label tp3Label = na
+if shortCondition
+    shortEntryLevel := close
+    shortSLLevel := close * (1 + slPercent / 100)
+    shortTP1Level := close * (1 - tp1Percent / 100)
+    shortTP2Level := close * (1 - tp2Percent / 100)
+    shortTP3Level := close * (1 - tp3Percent / 100)
 
-if showLevels and (longCondition or shortCondition)
-    line.delete(entryLine)
-    line.delete(slLine)
-    line.delete(tp1Line)
-    line.delete(tp2Line)
-    line.delete(tp3Line)
-    label.delete(entryLabel)
-    label.delete(slLabel)
-    label.delete(tp1Label)
-    label.delete(tp2Label)
-    label.delete(tp3Label)
+if enableBreakeven and strategy.position_size > 0 and tp2Hit
+    longSLLevel := strategy.position_avg_price
 
-if showLevels and longCondition
-    epx = close
-    slpx  = close * (1 - slPercent / 100)
-    tp1px = close * (1 + tp1Percent / 100)
-    tp2px = close * (1 + tp2Percent / 100)
-    tp3px = close * (1 + tp3Percent / 100)
-    entryLine := line.new(bar_index, epx, bar_index, epx, color=color.blue, width=1)
-    slLine := line.new(bar_index, slpx, bar_index, slpx, color=color.red, width=1)
-    entryLabel := label.new(bar_index, epx, "Entry: " + str.tostring(epx, "#.##"), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
-    slLabel := label.new(bar_index, slpx, "SL: " + str.tostring(slpx, "#.##"), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
-    if fireTP1
-        tp1Line := line.new(bar_index, tp1px, bar_index, tp1px, color=color.green, width=1)
-        tp1Label := label.new(bar_index, tp1px, "TP1: " + str.tostring(tp1px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
-    if enableTP2
-        tp2Line := line.new(bar_index, tp2px, bar_index, tp2px, color=color.green, width=1)
-        tp2Label := label.new(bar_index, tp2px, "TP2: " + str.tostring(tp2px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
-    if enableTP3
-        tp3Line := line.new(bar_index, tp3px, bar_index, tp3px, color=color.green, width=1)
-        tp3Label := label.new(bar_index, tp3px, "TP3: " + str.tostring(tp3px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+if enableBreakeven and strategy.position_size < 0 and tp2Hit
+    shortSLLevel := strategy.position_avg_price
 
-if showLevels and shortCondition
-    epx = close
-    slpx  = close * (1 + slPercent / 100)
-    tp1px = close * (1 - tp1Percent / 100)
-    tp2px = close * (1 - tp2Percent / 100)
-    tp3px = close * (1 - tp3Percent / 100)
-    entryLine := line.new(bar_index, epx, bar_index, epx, color=color.blue, width=1)
-    slLine := line.new(bar_index, slpx, bar_index, slpx, color=color.red, width=1)
-    entryLabel := label.new(bar_index, epx, "Entry: " + str.tostring(epx, "#.##"), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
-    slLabel := label.new(bar_index, slpx, "SL: " + str.tostring(slpx, "#.##"), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
-    if fireTP1
-        tp1Line := line.new(bar_index, tp1px, bar_index, tp1px, color=color.green, width=1)
-        tp1Label := label.new(bar_index, tp1px, "TP1: " + str.tostring(tp1px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
-    if enableTP2
-        tp2Line := line.new(bar_index, tp2px, bar_index, tp2px, color=color.green, width=1)
-        tp2Label := label.new(bar_index, tp2px, "TP2: " + str.tostring(tp2px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
-    if enableTP3
-        tp3Line := line.new(bar_index, tp3px, bar_index, tp3px, color=color.green, width=1)
-        tp3Label := label.new(bar_index, tp3px, "TP3: " + str.tostring(tp3px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+longEntryPlot  = showLevels ? longEntryLevel : na
+longSLPlot     = showLevels ? longSLLevel : na
+longTP1Plot    = showLevels and fireTP1 ? longTP1Level : na
+longTP2Plot    = showLevels and enableTP2 ? longTP2Level : na
+longTP3Plot    = showLevels and enableTP3 ? longTP3Level : na
 
-if showLevels and strategy.position_size != 0
-    if not na(entryLine)
-        line.set_x2(entryLine, bar_index)
-        label.set_x(entryLabel, bar_index)
-    if not na(slLine)
-        effectiveSL = strategy.position_size > 0 ? longTP3Stop : shortTP3Stop
-        line.set_x2(slLine, bar_index)
-        line.set_y1(slLine, effectiveSL)
-        line.set_y2(slLine, effectiveSL)
-        label.set_x(slLabel, bar_index)
-        label.set_y(slLabel, effectiveSL)
-        label.set_text(slLabel, (enableBreakeven and tp2Hit ? "SL (BE): " : "SL: ") + str.tostring(effectiveSL, "#.##"))
-    if not na(tp1Line)
-        line.set_x2(tp1Line, bar_index)
-        label.set_x(tp1Label, bar_index)
-    if not na(tp2Line)
-        line.set_x2(tp2Line, bar_index)
-        label.set_x(tp2Label, bar_index)
-    if not na(tp3Line)
-        line.set_x2(tp3Line, bar_index)
-        label.set_x(tp3Label, bar_index)
+shortEntryPlot = showLevels ? shortEntryLevel : na
+shortSLPlot    = showLevels ? shortSLLevel : na
+shortTP1Plot   = showLevels and fireTP1 ? shortTP1Level : na
+shortTP2Plot   = showLevels and enableTP2 ? shortTP2Level : na
+shortTP3Plot   = showLevels and enableTP3 ? shortTP3Level : na
+
+var float longExitPlot  = na
+var float shortExitPlot = na
+longExitPlot  := na
+shortExitPlot := na
+
+if strategy.closedtrades > lastClosedCount
+    closedIdx  = strategy.closedtrades - 1
+    lastProfit = strategy.closedtrades.profit(closedIdx)
+    if lastProfit > 0
+        dailyWins += 1
+    else
+        dailyLosses += 1
+    if showLevels
+        if strategy.closedtrades.entry_id(closedIdx) == "Long"
+            longExitPlot := strategy.closedtrades.exit_price(closedIdx)
+        else
+            shortExitPlot := strategy.closedtrades.exit_price(closedIdx)
+    lastClosedCount := strategy.closedtrades
+
+plot(longEntryPlot, title="Long Entry", style=plot.style_linebr, color=color.blue, linewidth=1)
+plot(longSLPlot, title="Long SL", style=plot.style_linebr, color=color.red, linewidth=1)
+plot(longTP1Plot, title="Long TP1", style=plot.style_linebr, color=color.green, linewidth=1)
+plot(longTP2Plot, title="Long TP2", style=plot.style_linebr, color=color.green, linewidth=1)
+plot(longTP3Plot, title="Long TP3", style=plot.style_linebr, color=color.green, linewidth=1)
+plot(longExitPlot, title="Long Exit", style=plot.style_circles, color=color.blue, linewidth=3)
+
+plot(shortEntryPlot, title="Short Entry", style=plot.style_linebr, color=color.orange, linewidth=1)
+plot(shortSLPlot, title="Short SL", style=plot.style_linebr, color=color.red, linewidth=1)
+plot(shortTP1Plot, title="Short TP1", style=plot.style_linebr, color=color.fuchsia, linewidth=1)
+plot(shortTP2Plot, title="Short TP2", style=plot.style_linebr, color=color.fuchsia, linewidth=1)
+plot(shortTP3Plot, title="Short TP3", style=plot.style_linebr, color=color.fuchsia, linewidth=1)
+plot(shortExitPlot, title="Short Exit", style=plot.style_circles, color=color.orange, linewidth=3)
 
 if showSignals and longCondition
     label.new(bar_index, low - atrVal * 0.5, "BUY", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
@@ -225,14 +217,6 @@ peakEquity := math.max(peakEquity, strategy.equity)
 currentDDPct = peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100 : 0.0
 var float maxDDPct = 0.0
 maxDDPct := math.max(maxDDPct, currentDDPct)
-
-if strategy.closedtrades > lastClosedCount
-    lastProfit = strategy.closedtrades.profit(strategy.closedtrades - 1)
-    if lastProfit > 0
-        dailyWins += 1
-    else
-        dailyLosses += 1
-    lastClosedCount := strategy.closedtrades
 
 totalTrades = strategy.closedtrades
 wins = strategy.wintrades
