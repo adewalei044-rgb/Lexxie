@@ -56,8 +56,7 @@ shortCondition = ta.crossover(close, upperBand) and bearBias and strategy.positi
 if longCondition or shortCondition
     dailyTradeCount := dailyTradeCount + 1
 
-if showZones
-    bgcolor(bullBias ? color.new(color.green, 92) : color.new(color.red, 92), title="Bias Zone")
+bgcolor(showZones ? (bullBias ? color.new(color.green, 92) : color.new(color.red, 92)) : na, title="Bias Zone")
 
 if longCondition
     strategy.entry("Long", strategy.long)
