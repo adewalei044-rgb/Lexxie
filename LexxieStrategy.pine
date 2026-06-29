@@ -8,8 +8,9 @@ biasLen     = input.int(50, "Bias ALMA Length", group="Trend / Band")
 atrLen      = input.int(14, "ATR Length", group="Trend / Band")
 bandMult    = input.float(1.5, "Entry Band ATR Mult", group="Trend / Band")
 
-slPercent   = input.float(0.5, "Stop Loss %", step=0.1, group="Exits")
-tpPercent   = input.float(1.0, "Take Profit % (1:2 RR)", step=0.1, group="Exits")
+slPercent      = input.float(0.5, "Stop Loss %", step=0.1, group="Trade Options")
+tpPercent      = input.float(1.0, "Take Profit % (1:2 RR)", step=0.1, group="Trade Options")
+maxTradesPerDay = input.int(5, "Max Trades Per Day", minval=1, group="Trade Options")
 
 showZones   = input.bool(true, "Show Long/Short Zone Boxes", group="Display")
 showSignals = input.bool(true, "Show Buy/Sell Markers", group="Display")
@@ -26,8 +27,25 @@ lowerBand = basis - atrVal * bandMult
 bullBias = close > bias
 bearBias = close < bias
 
-longCondition  = ta.crossunder(close, lowerBand) and bullBias and strategy.position_size <= 0
-shortCondition = ta.crossover(close, upperBand) and bearBias and strategy.position_size >= 0
+newDay = ta.change(time("D")) != 0
+
+var int dailyTradeCount = 0
+var int dailyWins = 0
+var int dailyLosses = 0
+var int lastClosedCount = 0
+
+if newDay
+    dailyTradeCount := 0
+    dailyWins := 0
+    dailyLosses := 0
+
+tradeLimitReached = dailyTradeCount >= maxTradesPerDay
+
+longCondition  = ta.crossunder(close, lowerBand) and bullBias and strategy.position_size <= 0 and not tradeLimitReached
+shortCondition = ta.crossover(close, upperBand) and bearBias and strategy.position_size >= 0 and not tradeLimitReached
+
+if longCondition or shortCondition
+    dailyTradeCount := dailyTradeCount + 1
 
 if showZones
     bgcolor(bullBias ? color.new(color.green, 92) : color.new(color.red, 92), title="Bias Zone")
@@ -124,15 +142,6 @@ peakEquity := math.max(peakEquity, strategy.equity)
 currentDDPct = peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100 : 0.0
 var float maxDDPct = 0.0
 maxDDPct := math.max(maxDDPct, currentDDPct)
-
-var int dailyWins = 0
-var int dailyLosses = 0
-var int lastClosedCount = 0
-newDay = ta.change(time("D")) != 0
-
-if newDay
-    dailyWins := 0
-    dailyLosses := 0
 
 if strategy.closedtrades > lastClosedCount
     lastProfit = strategy.closedtrades.profit(strategy.closedtrades - 1)
