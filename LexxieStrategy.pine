@@ -13,6 +13,7 @@ tpPercent   = input.float(1.0, "Take Profit % (1:2 RR)", step=0.1, group="Exits"
 
 showZones   = input.bool(true, "Show Long/Short Zone Boxes", group="Display")
 showSignals = input.bool(true, "Show Buy/Sell Markers", group="Display")
+showLevels  = input.bool(true, "Show Entry/SL/TP Lines", group="Display")
 showTable   = input.bool(true, "Show Stats Table", group="Display")
 
 basis  = ta.alma(close, almaLen, almaOffset, almaSigma)
@@ -63,6 +64,54 @@ if showZones and strategy.position_size > 0 and not na(longBox)
 
 if showZones and strategy.position_size < 0 and not na(shortBox)
     box.set_right(shortBox, bar_index)
+
+var line entryLine = na
+var line slLine = na
+var line tpLine = na
+var label entryLabel = na
+var label slLabel = na
+var label tpLabel = na
+
+if showLevels and (longCondition or shortCondition)
+    line.delete(entryLine)
+    line.delete(slLine)
+    line.delete(tpLine)
+    label.delete(entryLabel)
+    label.delete(slLabel)
+    label.delete(tpLabel)
+
+if showLevels and longCondition
+    epx = close
+    slpx = close * (1 - slPercent / 100)
+    tppx = close * (1 + tpPercent / 100)
+    entryLine := line.new(bar_index, epx, bar_index, epx, color=color.blue, width=1)
+    slLine := line.new(bar_index, slpx, bar_index, slpx, color=color.red, width=1)
+    tpLine := line.new(bar_index, tppx, bar_index, tppx, color=color.green, width=1)
+    entryLabel := label.new(bar_index, epx, "Entry: " + str.tostring(epx, "#.##"), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
+    slLabel := label.new(bar_index, slpx, "SL: " + str.tostring(slpx, "#.##"), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
+    tpLabel := label.new(bar_index, tppx, "TP: " + str.tostring(tppx, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+if showLevels and shortCondition
+    epx = close
+    slpx = close * (1 + slPercent / 100)
+    tppx = close * (1 - tpPercent / 100)
+    entryLine := line.new(bar_index, epx, bar_index, epx, color=color.blue, width=1)
+    slLine := line.new(bar_index, slpx, bar_index, slpx, color=color.red, width=1)
+    tpLine := line.new(bar_index, tppx, bar_index, tppx, color=color.green, width=1)
+    entryLabel := label.new(bar_index, epx, "Entry: " + str.tostring(epx, "#.##"), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
+    slLabel := label.new(bar_index, slpx, "SL: " + str.tostring(slpx, "#.##"), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
+    tpLabel := label.new(bar_index, tppx, "TP: " + str.tostring(tppx, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+if showLevels and strategy.position_size != 0
+    if not na(entryLine)
+        line.set_x2(entryLine, bar_index)
+        label.set_x(entryLabel, bar_index)
+    if not na(slLine)
+        line.set_x2(slLine, bar_index)
+        label.set_x(slLabel, bar_index)
+    if not na(tpLine)
+        line.set_x2(tpLine, bar_index)
+        label.set_x(tpLabel, bar_index)
 
 if showSignals and longCondition
     label.new(bar_index, low - atrVal * 0.5, "BUY", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
