@@ -53,10 +53,10 @@ var box longBox = na
 var box shortBox = na
 
 if showZones and longCondition
-    longBox := box.new(left=bar_index, top=close * (1 + tpPercent / 100), bottom=close * (1 - slPercent / 100), right=bar_index, bgcolor=color.new(color.green, 85), border_color=color.green, border_width=1)
+    longBox := box.new(left=bar_index, top=close * (1 + tpPercent / 100), bottom=close * (1 - slPercent / 100), right=bar_index, bgcolor=color.new(#FFC0CB, 80), border_color=#FFC0CB, border_width=1)
 
 if showZones and shortCondition
-    shortBox := box.new(left=bar_index, top=close * (1 + slPercent / 100), bottom=close * (1 - tpPercent / 100), right=bar_index, bgcolor=color.new(color.red, 85), border_color=color.red, border_width=1)
+    shortBox := box.new(left=bar_index, top=close * (1 + slPercent / 100), bottom=close * (1 - tpPercent / 100), right=bar_index, bgcolor=color.new(color.black, 80), border_color=color.new(color.black, 30), border_width=1)
 
 if showZones and strategy.position_size > 0 and not na(longBox)
     box.set_right(longBox, bar_index)
