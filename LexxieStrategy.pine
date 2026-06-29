@@ -8,8 +8,10 @@ biasLen     = input.int(50, "Bias ALMA Length", group="Trend / Band")
 atrLen      = input.int(14, "ATR Length", group="Trend / Band")
 bandMult    = input.float(1.5, "Entry Band ATR Mult", group="Trend / Band")
 
-slPercent      = input.float(0.5, "Stop Loss %", step=0.1, group="Trade Options")
-tpPercent      = input.float(1.0, "Take Profit % (1:2 RR)", step=0.1, group="Trade Options")
+slPercent       = input.float(0.5, "Stop Loss %", step=0.1, group="Trade Options")
+enableTP1       = input.bool(true, "Enable TP1 (1R)", group="Trade Options")
+enableTP2       = input.bool(true, "Enable TP2 (2R)", group="Trade Options")
+enableTP3       = input.bool(true, "Enable TP3 (3R)", group="Trade Options")
 maxTradesPerDay = input.int(5, "Max Trades Per Day", minval=1, group="Trade Options")
 
 showZones   = input.bool(true, "Show Long/Short Zone Boxes", group="Display")
@@ -56,26 +58,51 @@ if longCondition
 if shortCondition
     strategy.entry("Short", strategy.short)
 
-longSL = strategy.position_avg_price * (1 - slPercent / 100)
-longTP = strategy.position_avg_price * (1 + tpPercent / 100)
+tp1Percent = slPercent * 1
+tp2Percent = slPercent * 2
+tp3Percent = slPercent * 3
 
-shortSL = strategy.position_avg_price * (1 + slPercent / 100)
-shortTP = strategy.position_avg_price * (1 - tpPercent / 100)
+longSL  = strategy.position_avg_price * (1 - slPercent / 100)
+longTP1 = strategy.position_avg_price * (1 + tp1Percent / 100)
+longTP2 = strategy.position_avg_price * (1 + tp2Percent / 100)
+longTP3 = strategy.position_avg_price * (1 + tp3Percent / 100)
+
+shortSL  = strategy.position_avg_price * (1 + slPercent / 100)
+shortTP1 = strategy.position_avg_price * (1 - tp1Percent / 100)
+shortTP2 = strategy.position_avg_price * (1 - tp2Percent / 100)
+shortTP3 = strategy.position_avg_price * (1 - tp3Percent / 100)
+
+isLastTP1 = enableTP1 and not enableTP2 and not enableTP3
+isLastTP2 = enableTP2 and not enableTP3
+qtyTP1 = isLastTP1 ? 100 : 33
+qtyTP2 = isLastTP2 ? 100 : 50
 
 if strategy.position_size > 0
-    strategy.exit("Long Exit", from_entry="Long", limit=longTP, stop=longSL)
+    if enableTP1
+        strategy.exit("Long TP1", from_entry="Long", qty_percent=qtyTP1, limit=longTP1, stop=longSL)
+    if enableTP2
+        strategy.exit("Long TP2", from_entry="Long", qty_percent=qtyTP2, limit=longTP2, stop=longSL)
+    if enableTP3
+        strategy.exit("Long TP3", from_entry="Long", qty_percent=100, limit=longTP3, stop=longSL)
 
 if strategy.position_size < 0
-    strategy.exit("Short Exit", from_entry="Short", limit=shortTP, stop=shortSL)
+    if enableTP1
+        strategy.exit("Short TP1", from_entry="Short", qty_percent=qtyTP1, limit=shortTP1, stop=shortSL)
+    if enableTP2
+        strategy.exit("Short TP2", from_entry="Short", qty_percent=qtyTP2, limit=shortTP2, stop=shortSL)
+    if enableTP3
+        strategy.exit("Short TP3", from_entry="Short", qty_percent=100, limit=shortTP3, stop=shortSL)
 
 var box longBox = na
 var box shortBox = na
 
+maxTPPercent = enableTP3 ? tp3Percent : enableTP2 ? tp2Percent : tp1Percent
+
 if showZones and longCondition
-    longBox := box.new(left=bar_index, top=close * (1 + tpPercent / 100), bottom=close * (1 - slPercent / 100), right=bar_index, bgcolor=color.new(#FFC0CB, 80), border_color=#FFC0CB, border_width=1)
+    longBox := box.new(left=bar_index, top=close * (1 + maxTPPercent / 100), bottom=close * (1 - slPercent / 100), right=bar_index, bgcolor=color.new(#FFC0CB, 80), border_color=#FFC0CB, border_width=1)
 
 if showZones and shortCondition
-    shortBox := box.new(left=bar_index, top=close * (1 + slPercent / 100), bottom=close * (1 - tpPercent / 100), right=bar_index, bgcolor=color.new(color.black, 80), border_color=color.new(color.black, 30), border_width=1)
+    shortBox := box.new(left=bar_index, top=close * (1 + slPercent / 100), bottom=close * (1 - maxTPPercent / 100), right=bar_index, bgcolor=color.new(color.black, 80), border_color=color.new(color.black, 30), border_width=1)
 
 if showZones and strategy.position_size > 0 and not na(longBox)
     box.set_right(longBox, bar_index)
@@ -85,40 +112,66 @@ if showZones and strategy.position_size < 0 and not na(shortBox)
 
 var line entryLine = na
 var line slLine = na
-var line tpLine = na
+var line tp1Line = na
+var line tp2Line = na
+var line tp3Line = na
 var label entryLabel = na
 var label slLabel = na
-var label tpLabel = na
+var label tp1Label = na
+var label tp2Label = na
+var label tp3Label = na
 
 if showLevels and (longCondition or shortCondition)
     line.delete(entryLine)
     line.delete(slLine)
-    line.delete(tpLine)
+    line.delete(tp1Line)
+    line.delete(tp2Line)
+    line.delete(tp3Line)
     label.delete(entryLabel)
     label.delete(slLabel)
-    label.delete(tpLabel)
+    label.delete(tp1Label)
+    label.delete(tp2Label)
+    label.delete(tp3Label)
 
 if showLevels and longCondition
     epx = close
-    slpx = close * (1 - slPercent / 100)
-    tppx = close * (1 + tpPercent / 100)
+    slpx  = close * (1 - slPercent / 100)
+    tp1px = close * (1 + tp1Percent / 100)
+    tp2px = close * (1 + tp2Percent / 100)
+    tp3px = close * (1 + tp3Percent / 100)
     entryLine := line.new(bar_index, epx, bar_index, epx, color=color.blue, width=1)
     slLine := line.new(bar_index, slpx, bar_index, slpx, color=color.red, width=1)
-    tpLine := line.new(bar_index, tppx, bar_index, tppx, color=color.green, width=1)
     entryLabel := label.new(bar_index, epx, "Entry: " + str.tostring(epx, "#.##"), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
     slLabel := label.new(bar_index, slpx, "SL: " + str.tostring(slpx, "#.##"), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
-    tpLabel := label.new(bar_index, tppx, "TP: " + str.tostring(tppx, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+    if enableTP1
+        tp1Line := line.new(bar_index, tp1px, bar_index, tp1px, color=color.green, width=1)
+        tp1Label := label.new(bar_index, tp1px, "TP1: " + str.tostring(tp1px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+    if enableTP2
+        tp2Line := line.new(bar_index, tp2px, bar_index, tp2px, color=color.green, width=1)
+        tp2Label := label.new(bar_index, tp2px, "TP2: " + str.tostring(tp2px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+    if enableTP3
+        tp3Line := line.new(bar_index, tp3px, bar_index, tp3px, color=color.green, width=1)
+        tp3Label := label.new(bar_index, tp3px, "TP3: " + str.tostring(tp3px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
 
 if showLevels and shortCondition
     epx = close
-    slpx = close * (1 + slPercent / 100)
-    tppx = close * (1 - tpPercent / 100)
+    slpx  = close * (1 + slPercent / 100)
+    tp1px = close * (1 - tp1Percent / 100)
+    tp2px = close * (1 - tp2Percent / 100)
+    tp3px = close * (1 - tp3Percent / 100)
     entryLine := line.new(bar_index, epx, bar_index, epx, color=color.blue, width=1)
     slLine := line.new(bar_index, slpx, bar_index, slpx, color=color.red, width=1)
-    tpLine := line.new(bar_index, tppx, bar_index, tppx, color=color.green, width=1)
     entryLabel := label.new(bar_index, epx, "Entry: " + str.tostring(epx, "#.##"), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
     slLabel := label.new(bar_index, slpx, "SL: " + str.tostring(slpx, "#.##"), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
-    tpLabel := label.new(bar_index, tppx, "TP: " + str.tostring(tppx, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+    if enableTP1
+        tp1Line := line.new(bar_index, tp1px, bar_index, tp1px, color=color.green, width=1)
+        tp1Label := label.new(bar_index, tp1px, "TP1: " + str.tostring(tp1px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+    if enableTP2
+        tp2Line := line.new(bar_index, tp2px, bar_index, tp2px, color=color.green, width=1)
+        tp2Label := label.new(bar_index, tp2px, "TP2: " + str.tostring(tp2px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+    if enableTP3
+        tp3Line := line.new(bar_index, tp3px, bar_index, tp3px, color=color.green, width=1)
+        tp3Label := label.new(bar_index, tp3px, "TP3: " + str.tostring(tp3px, "#.##"), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
 
 if showLevels and strategy.position_size != 0
     if not na(entryLine)
@@ -127,9 +180,15 @@ if showLevels and strategy.position_size != 0
     if not na(slLine)
         line.set_x2(slLine, bar_index)
         label.set_x(slLabel, bar_index)
-    if not na(tpLine)
-        line.set_x2(tpLine, bar_index)
-        label.set_x(tpLabel, bar_index)
+    if not na(tp1Line)
+        line.set_x2(tp1Line, bar_index)
+        label.set_x(tp1Label, bar_index)
+    if not na(tp2Line)
+        line.set_x2(tp2Line, bar_index)
+        label.set_x(tp2Label, bar_index)
+    if not na(tp3Line)
+        line.set_x2(tp3Line, bar_index)
+        label.set_x(tp3Label, bar_index)
 
 if showSignals and longCondition
     label.new(bar_index, low - atrVal * 0.5, "BUY", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
