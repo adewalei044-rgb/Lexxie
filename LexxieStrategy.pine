@@ -8,10 +8,8 @@ biasLen     = input.int(50, "Bias ALMA Length", group="Trend / Band")
 atrLen      = input.int(14, "ATR Length", group="Trend / Band")
 bandMult    = input.float(1.5, "Entry Band ATR Mult", group="Trend / Band")
 
-slMult      = input.float(1.5, "Stop Loss ATR Mult", group="Exits")
-tp1Mult     = input.float(1.0, "TP1 ATR Mult", group="Exits")
-tp2Mult     = input.float(2.0, "TP2 ATR Mult", group="Exits")
-tp3Mult     = input.float(3.0, "TP3 ATR Mult", group="Exits")
+slPercent   = input.float(0.5, "Stop Loss %", step=0.1, group="Exits")
+tpPercent   = input.float(1.0, "Take Profit % (1:2 RR)", step=0.1, group="Exits")
 
 showZones   = input.bool(true, "Show Long/Short Zone Boxes", group="Display")
 showSignals = input.bool(true, "Show Buy/Sell Markers", group="Display")
@@ -30,10 +28,6 @@ bearBias = close < bias
 longCondition  = ta.crossunder(close, lowerBand) and bullBias and strategy.position_size <= 0
 shortCondition = ta.crossover(close, upperBand) and bearBias and strategy.position_size >= 0
 
-var float entryATR = na
-if longCondition or shortCondition
-    entryATR := atrVal
-
 if showZones
     bgcolor(bullBias ? color.new(color.green, 92) : color.new(color.red, 92), title="Bias Zone")
 
@@ -43,34 +37,26 @@ if longCondition
 if shortCondition
     strategy.entry("Short", strategy.short)
 
-longSL  = strategy.position_avg_price - entryATR * slMult
-longTP1 = strategy.position_avg_price + entryATR * tp1Mult
-longTP2 = strategy.position_avg_price + entryATR * tp2Mult
-longTP3 = strategy.position_avg_price + entryATR * tp3Mult
+longSL = strategy.position_avg_price * (1 - slPercent / 100)
+longTP = strategy.position_avg_price * (1 + tpPercent / 100)
 
-shortSL  = strategy.position_avg_price + entryATR * slMult
-shortTP1 = strategy.position_avg_price - entryATR * tp1Mult
-shortTP2 = strategy.position_avg_price - entryATR * tp2Mult
-shortTP3 = strategy.position_avg_price - entryATR * tp3Mult
+shortSL = strategy.position_avg_price * (1 + slPercent / 100)
+shortTP = strategy.position_avg_price * (1 - tpPercent / 100)
 
 if strategy.position_size > 0
-    strategy.exit("Long TP1", from_entry="Long", qty_percent=33, limit=longTP1, stop=longSL)
-    strategy.exit("Long TP2", from_entry="Long", qty_percent=50, limit=longTP2, stop=longSL)
-    strategy.exit("Long TP3", from_entry="Long", qty_percent=100, limit=longTP3, stop=longSL)
+    strategy.exit("Long Exit", from_entry="Long", limit=longTP, stop=longSL)
 
 if strategy.position_size < 0
-    strategy.exit("Short TP1", from_entry="Short", qty_percent=33, limit=shortTP1, stop=shortSL)
-    strategy.exit("Short TP2", from_entry="Short", qty_percent=50, limit=shortTP2, stop=shortSL)
-    strategy.exit("Short TP3", from_entry="Short", qty_percent=100, limit=shortTP3, stop=shortSL)
+    strategy.exit("Short Exit", from_entry="Short", limit=shortTP, stop=shortSL)
 
 var box longBox = na
 var box shortBox = na
 
 if showZones and longCondition
-    longBox := box.new(left=bar_index, top=close + atrVal * tp3Mult, bottom=close - atrVal * slMult, right=bar_index, bgcolor=color.new(color.green, 85), border_color=color.green, border_width=1)
+    longBox := box.new(left=bar_index, top=close * (1 + tpPercent / 100), bottom=close * (1 - slPercent / 100), right=bar_index, bgcolor=color.new(color.green, 85), border_color=color.green, border_width=1)
 
 if showZones and shortCondition
-    shortBox := box.new(left=bar_index, top=close + atrVal * slMult, bottom=close - atrVal * tp3Mult, right=bar_index, bgcolor=color.new(color.red, 85), border_color=color.red, border_width=1)
+    shortBox := box.new(left=bar_index, top=close * (1 + slPercent / 100), bottom=close * (1 - tpPercent / 100), right=bar_index, bgcolor=color.new(color.red, 85), border_color=color.red, border_width=1)
 
 if showZones and strategy.position_size > 0 and not na(longBox)
     box.set_right(longBox, bar_index)
