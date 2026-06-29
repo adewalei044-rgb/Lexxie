@@ -1,0 +1,129 @@
+//@version=6
+strategy("Lexxie Strategy v6", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=10, pyramiding=0, calc_on_every_tick=false, process_orders_on_close=true, initial_capital=1000)
+
+almaLen     = input.int(9, "ALMA Length", group="Trend / Band")
+almaOffset  = input.float(0.85, "ALMA Offset", step=0.05, group="Trend / Band")
+almaSigma   = input.float(6, "ALMA Sigma", group="Trend / Band")
+biasLen     = input.int(50, "Bias ALMA Length", group="Trend / Band")
+atrLen      = input.int(14, "ATR Length", group="Trend / Band")
+bandMult    = input.float(1.5, "Entry Band ATR Mult", group="Trend / Band")
+
+slMult      = input.float(1.5, "Stop Loss ATR Mult", group="Exits")
+tp1Mult     = input.float(1.0, "TP1 ATR Mult", group="Exits")
+tp2Mult     = input.float(2.0, "TP2 ATR Mult", group="Exits")
+tp3Mult     = input.float(3.0, "TP3 ATR Mult", group="Exits")
+
+showZones   = input.bool(true, "Show Long/Short Zone Boxes", group="Display")
+showSignals = input.bool(true, "Show Buy/Sell Markers", group="Display")
+showTable   = input.bool(true, "Show Stats Table", group="Display")
+
+basis  = ta.alma(close, almaLen, almaOffset, almaSigma)
+bias   = ta.alma(close, biasLen, almaOffset, almaSigma)
+atrVal = ta.atr(atrLen)
+
+upperBand = basis + atrVal * bandMult
+lowerBand = basis - atrVal * bandMult
+
+bullBias = close > bias
+bearBias = close < bias
+
+longCondition  = ta.crossunder(close, lowerBand) and bullBias and strategy.position_size <= 0
+shortCondition = ta.crossover(close, upperBand) and bearBias and strategy.position_size >= 0
+
+var float entryATR = na
+if longCondition or shortCondition
+    entryATR := atrVal
+
+if showZones
+    bgcolor(bullBias ? color.new(color.green, 92) : color.new(color.red, 92), title="Bias Zone")
+
+if longCondition
+    strategy.entry("Long", strategy.long)
+
+if shortCondition
+    strategy.entry("Short", strategy.short)
+
+longSL  = strategy.position_avg_price - entryATR * slMult
+longTP1 = strategy.position_avg_price + entryATR * tp1Mult
+longTP2 = strategy.position_avg_price + entryATR * tp2Mult
+longTP3 = strategy.position_avg_price + entryATR * tp3Mult
+
+shortSL  = strategy.position_avg_price + entryATR * slMult
+shortTP1 = strategy.position_avg_price - entryATR * tp1Mult
+shortTP2 = strategy.position_avg_price - entryATR * tp2Mult
+shortTP3 = strategy.position_avg_price - entryATR * tp3Mult
+
+if strategy.position_size > 0
+    strategy.exit("Long TP1", from_entry="Long", qty_percent=33, limit=longTP1, stop=longSL)
+    strategy.exit("Long TP2", from_entry="Long", qty_percent=50, limit=longTP2, stop=longSL)
+    strategy.exit("Long TP3", from_entry="Long", qty_percent=100, limit=longTP3, stop=longSL)
+
+if strategy.position_size < 0
+    strategy.exit("Short TP1", from_entry="Short", qty_percent=33, limit=shortTP1, stop=shortSL)
+    strategy.exit("Short TP2", from_entry="Short", qty_percent=50, limit=shortTP2, stop=shortSL)
+    strategy.exit("Short TP3", from_entry="Short", qty_percent=100, limit=shortTP3, stop=shortSL)
+
+var box longBox = na
+var box shortBox = na
+
+if showZones and longCondition
+    longBox := box.new(left=bar_index, top=close + atrVal * tp3Mult, bottom=close - atrVal * slMult, right=bar_index, bgcolor=color.new(color.green, 85), border_color=color.green, border_width=1)
+
+if showZones and shortCondition
+    shortBox := box.new(left=bar_index, top=close + atrVal * slMult, bottom=close - atrVal * tp3Mult, right=bar_index, bgcolor=color.new(color.red, 85), border_color=color.red, border_width=1)
+
+if showZones and strategy.position_size > 0 and not na(longBox)
+    box.set_right(longBox, bar_index)
+
+if showZones and strategy.position_size < 0 and not na(shortBox)
+    box.set_right(shortBox, bar_index)
+
+if showSignals and longCondition
+    label.new(bar_index, low - atrVal * 0.5, "BUY", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if showSignals and shortCondition
+    label.new(bar_index, high + atrVal * 0.5, "SELL", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+var float peakEquity = strategy.initial_capital
+peakEquity := math.max(peakEquity, strategy.equity)
+currentDDPct = peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100 : 0.0
+var float maxDDPct = 0.0
+maxDDPct := math.max(maxDDPct, currentDDPct)
+
+var int dailyWins = 0
+var int dailyLosses = 0
+var int lastClosedCount = 0
+newDay = ta.change(time("D")) != 0
+
+if newDay
+    dailyWins := 0
+    dailyLosses := 0
+
+if strategy.closedtrades > lastClosedCount
+    lastProfit = strategy.closedtrades.profit(strategy.closedtrades - 1)
+    if lastProfit > 0
+        dailyWins += 1
+    else
+        dailyLosses += 1
+    lastClosedCount := strategy.closedtrades
+
+totalTrades = strategy.closedtrades
+wins = strategy.wintrades
+losses = strategy.losstrades
+winRate = totalTrades > 0 ? wins / totalTrades * 100 : 0.0
+
+var table statsTable = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 20), border_color=color.gray, border_width=1)
+
+if showTable and barstate.islast
+    table.cell(statsTable, 0, 0, "Win Rate", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(statsTable, 1, 0, str.tostring(winRate, "#.##") + "%", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(statsTable, 0, 1, "Wins", text_color=color.white)
+    table.cell(statsTable, 1, 1, str.tostring(wins), text_color=color.green)
+    table.cell(statsTable, 0, 2, "Losses", text_color=color.white)
+    table.cell(statsTable, 1, 2, str.tostring(losses), text_color=color.red)
+    table.cell(statsTable, 0, 3, "Daily Win", text_color=color.white)
+    table.cell(statsTable, 1, 3, str.tostring(dailyWins), text_color=color.green)
+    table.cell(statsTable, 0, 4, "Daily Loss", text_color=color.white)
+    table.cell(statsTable, 1, 4, str.tostring(dailyLosses), text_color=color.red)
+    table.cell(statsTable, 0, 5, "Drawdown", text_color=color.white)
+    table.cell(statsTable, 1, 5, str.tostring(maxDDPct, "#.##") + "%", text_color=color.orange)
