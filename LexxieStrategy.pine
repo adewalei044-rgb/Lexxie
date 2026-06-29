@@ -14,6 +14,7 @@ enableTP2       = input.bool(true, "Enable TP2 (2R)", group="Trade Options")
 enableTP3       = input.bool(true, "Enable TP3 (3R)", group="Trade Options")
 maxTradesPerDay = input.int(5, "Max Trades Per Day", minval=1, group="Trade Options")
 maxDailyLossPct = input.float(2.0, "Max Daily Loss %", minval=0.1, step=0.1, group="Trade Options")
+enableBreakeven = input.bool(true, "Move Stop to Breakeven After TP2", group="Trade Options")
 
 showZones   = input.bool(true, "Show Long/Short Zone Boxes", group="Display")
 showSignals = input.bool(true, "Show Buy/Sell Markers", group="Display")
@@ -85,13 +86,24 @@ fireTP1     = enableTP1 and not skipTP1Only
 qtyTP1 = isLastTP1 ? 100 : 33
 qtyTP2 = isLastTP2 ? 100 : 50
 
+var bool tp2Hit = false
+if strategy.position_size == 0
+    tp2Hit := false
+else if strategy.position_size > 0 and high >= longTP2
+    tp2Hit := true
+else if strategy.position_size < 0 and low <= shortTP2
+    tp2Hit := true
+
+longTP3Stop  = enableBreakeven and tp2Hit ? strategy.position_avg_price : longSL
+shortTP3Stop = enableBreakeven and tp2Hit ? strategy.position_avg_price : shortSL
+
 if strategy.position_size > 0
     if fireTP1
         strategy.exit("Long TP1", from_entry="Long", qty_percent=qtyTP1, limit=longTP1, stop=longSL)
     if enableTP2
         strategy.exit("Long TP2", from_entry="Long", qty_percent=qtyTP2, limit=longTP2, stop=longSL)
     if enableTP3
-        strategy.exit("Long TP3", from_entry="Long", qty_percent=100, limit=longTP3, stop=longSL)
+        strategy.exit("Long TP3", from_entry="Long", qty_percent=100, limit=longTP3, stop=longTP3Stop)
 
 if strategy.position_size < 0
     if fireTP1
@@ -99,7 +111,7 @@ if strategy.position_size < 0
     if enableTP2
         strategy.exit("Short TP2", from_entry="Short", qty_percent=qtyTP2, limit=shortTP2, stop=shortSL)
     if enableTP3
-        strategy.exit("Short TP3", from_entry="Short", qty_percent=100, limit=shortTP3, stop=shortSL)
+        strategy.exit("Short TP3", from_entry="Short", qty_percent=100, limit=shortTP3, stop=shortTP3Stop)
 
 var box longBox = na
 var box shortBox = na
@@ -186,8 +198,13 @@ if showLevels and strategy.position_size != 0
         line.set_x2(entryLine, bar_index)
         label.set_x(entryLabel, bar_index)
     if not na(slLine)
+        effectiveSL = strategy.position_size > 0 ? longTP3Stop : shortTP3Stop
         line.set_x2(slLine, bar_index)
+        line.set_y1(slLine, effectiveSL)
+        line.set_y2(slLine, effectiveSL)
         label.set_x(slLabel, bar_index)
+        label.set_y(slLabel, effectiveSL)
+        label.set_text(slLabel, (enableBreakeven and tp2Hit ? "SL (BE): " : "SL: ") + str.tostring(effectiveSL, "#.##"))
     if not na(tp1Line)
         line.set_x2(tp1Line, bar_index)
         label.set_x(tp1Label, bar_index)
