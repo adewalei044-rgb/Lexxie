@@ -708,27 +708,26 @@ O_SXMSGC     = 'Short TP3'
 O_SXMSGX     = 'Short Exit'
 
 // ——————————— <input>          |           |                               |                        Line length guide |
-i_lxLvlTP1   = input.float      (1,         'Level TP1'                     , group = G_RISK,
-     tooltip =                   T_LVL)
-i_lxQtyTP1   = input.float      (50,        'Qty   TP1'                     , group = G_RISK,
-     tooltip =                   T_QTY)
-i_lxLvlTP2   = input.float      (1.5,       'Level TP2'                     , group = G_RISK,
-     tooltip =                   T_LVL)
-i_lxQtyTP2   = input.float      (30,        'Qty   TP2'                     , group = G_RISK,
-     tooltip =                   T_QTY)
-i_lxLvlTP3   = input.float      (2,         'Level TP3'                     , group = G_RISK,
-     tooltip =                   T_LVL)
-i_lxQtyTP3   = input.float      (20,        'Qty   TP3'                     , group = G_RISK,
-     tooltip =                   T_QTY)
-i_lxLvlSL    = input.float      (0.5,       'Stop Loss'                     , group = G_RISK,
-     tooltip =                   T_LVL)
-i_sxLvlTP1   = i_lxLvlTP1
-i_sxQtyTP1   = i_lxQtyTP1
-i_sxLvlTP2   = i_lxLvlTP2
-i_sxQtyTP2   = i_lxQtyTP2
-i_sxLvlTP3   = i_lxLvlTP3
-i_sxQtyTP3   = i_lxQtyTP3
-i_sxLvlSL    = i_lxLvlSL
+G_TP1        = '■ ' + 'TP1'
+i_lxLvlTP1   = input.float      (1,         'Level Long TP1'                , group = G_TP1, tooltip = T_LVL)
+i_lxQtyTP1   = input.float      (50,        'Qty   Long TP1'                , group = G_TP1, tooltip = T_QTY)
+i_sxLvlTP1   = input.float      (1,         'Level Short TP1'               , group = G_TP1, tooltip = T_LVL)
+i_sxQtyTP1   = input.float      (50,        'Qty   Short TP1'               , group = G_TP1, tooltip = T_QTY)
+
+G_TP2        = '■ ' + 'TP2'
+i_lxLvlTP2   = input.float      (1.5,       'Level Long TP2'                , group = G_TP2, tooltip = T_LVL)
+i_lxQtyTP2   = input.float      (30,        'Qty   Long TP2'                , group = G_TP2, tooltip = T_QTY)
+i_sxLvlTP2   = input.float      (1.5,       'Level Short TP2'               , group = G_TP2, tooltip = T_LVL)
+i_sxQtyTP2   = input.float      (30,        'Qty   Short TP2'               , group = G_TP2, tooltip = T_QTY)
+
+G_TP3        = '■ ' + 'TP3'
+i_lxLvlTP3   = input.float      (2,         'Level Long TP3'                , group = G_TP3, tooltip = T_LVL)
+i_lxQtyTP3   = input.float      (20,        'Qty   Long TP3'                , group = G_TP3, tooltip = T_QTY)
+i_sxLvlTP3   = input.float      (2,         'Level Short TP3'               , group = G_TP3, tooltip = T_LVL)
+i_sxQtyTP3   = input.float      (20,        'Qty   Short TP3'               , group = G_TP3, tooltip = T_QTY)
+
+i_lxLvlSL    = input.float      (0.5,       'Long Stop Loss'                , group = G_RISK, tooltip = T_LVL)
+i_sxLvlSL    = input.float      (0.5,       'Short Stop Loss'               , group = G_RISK, tooltip = T_LVL)
 
 G_MSG        = '■ ' + 'Webhook Message'
 i_leMsg      = input.string     (O_LEMSG   ,'Long Entry'                   , group = G_MSG, tooltip = T_MSG)
@@ -780,8 +779,8 @@ var float entryLine = 0.0
 entryLine   := leTrigger and condition[1] <=  0.0 ? close :
                seTrigger and condition[1] >=  0.0 ? close : nz(entryLine[1])
 //<SL>
-slTopLvl    = i_src + (i_src * (i_lxLvlSL / 100))
-slBotLvl    = i_src - (i_src * (i_sxLvlSL / 100))
+slTopLvl    = i_src + (i_src * (i_sxLvlSL / 100))
+slBotLvl    = i_src - (i_src * (i_lxLvlSL / 100))
 slLine     := condition[1] <=  0.0 and leTrigger ? slBotLvl :
               condition[1] >=  0.0 and seTrigger ? slTopLvl : nz(slLine[1])
 slLong      = f_cross(low,  slLine, false)
