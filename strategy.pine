@@ -66,7 +66,7 @@ zigzag_color              = input.color(#00000000, 'Zig Zag', group = 'Visual Se
 //END SETTINGS
 
 // ——— Suppress all visual output on 5m, 10m and 15m timeframes
-isBlockedTF = timeframe.period == "5" or timeframe.period == "10" or timeframe.period == "15"
+isBlockedTF = timeframe.period == "1" or timeframe.period == "5" or timeframe.period == "10" or timeframe.period == "15" or timeframe.period == "60"
 
 //FUNCTIONS
 
