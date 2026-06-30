@@ -670,6 +670,12 @@ openSeries  = variant(basisType, open[delayOffset],  basisLen, offsetSigma, offs
 closeSeriesAlt = reso(closeSeries, useRes, stratRes)
 openSeriesAlt  = reso(openSeries, useRes, stratRes)
 
+// Real-time versions (no offset) — for immediate label display only, not entries
+closeSeriesAltRT = useRes ? request.security(syminfo.tickerid, stratRes, closeSeries, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on) : closeSeries
+openSeriesAltRT  = useRes ? request.security(syminfo.tickerid, stratRes, openSeries,  gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on) : openSeries
+longEDisplay  = ta.crossover (closeSeriesAltRT, openSeriesAltRT)
+shortEDisplay = ta.crossunder(closeSeriesAltRT, openSeriesAltRT)
+
 //#endregion }
 // ——————————— <↑↑↑ G_SCRIPT01 ↑↑↑>
 
@@ -971,7 +977,7 @@ fill(
 
 //<alerts labels>
 plotshape(
-  i_alertOn and longE,
+  i_alertOn and longEDisplay,
   title      = 'Long',
   text       = 'Long',
   textcolor  = color.white,
@@ -980,7 +986,7 @@ plotshape(
   size       = size.tiny,
   location   = location.belowbar)
 plotshape(
-  i_alertOn and shortE,
+  i_alertOn and shortEDisplay,
   title      = 'Short',
   text       = 'Short',
   textcolor  = color.white,
