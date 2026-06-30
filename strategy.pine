@@ -269,7 +269,7 @@ var demand_bos         = array.new_box(5, na)
 //
 
 //      NEW SWING HIGH
-if not na(swing_high) and not isBlockedTF
+if not na(swing_high)
 
     //MANAGE SWING HIGH VALUES
     f_array_add_pop(swing_high_values, swing_high)
@@ -280,7 +280,7 @@ if not na(swing_high) and not isBlockedTF
     f_supply_demand(swing_high_values, swing_high_bns, current_supply_box, current_supply_poi, 1, atrValue)
 
 //      NEW SWING LOW
-else if not na(swing_low) and not isBlockedTF
+else if not na(swing_low)
 
     //MANAGE SWING LOW VALUES
     f_array_add_pop(swing_low_values, swing_low)
@@ -291,12 +291,11 @@ else if not na(swing_low) and not isBlockedTF
     f_supply_demand(swing_low_values, swing_low_bns, current_demand_box, current_demand_poi, -1, atrValue)
 
 
-if not isBlockedTF
-    f_sd_to_bos(current_supply_box, supply_bos, current_supply_poi, 1)
-    f_sd_to_bos(current_demand_box, demand_bos, current_demand_poi, -1)
+f_sd_to_bos(current_supply_box, supply_bos, current_supply_poi, 1)
+f_sd_to_bos(current_demand_box, demand_bos, current_demand_poi, -1)
 
-    f_extend_box_endpoint(current_supply_box)
-    f_extend_box_endpoint(current_demand_box)
+f_extend_box_endpoint(current_supply_box)
+f_extend_box_endpoint(current_demand_box)
 
 // Get user input
 
@@ -568,7 +567,7 @@ var line lowest_fill1  = na, line.delete(lowest_fill1)
 var line lowest_fill2  = na, line.delete(lowest_fill2)
 hi_col = close >= highestph ? colorSup : colorRes
 lo_col = close >= lowestpl  ? colorSup : colorRes
-if enableSR and not isBlockedTF
+if enableSR
     highest_ := line.new(bar_index - 311, highestph, bar_index, highestph, xloc.bar_index, expandSR ? extend.both : extend.right, hi_col, style, lineWidth)
     lowest_  := line.new(bar_index - 311, lowestpl , bar_index, lowestpl , xloc.bar_index, expandSR ? extend.both : extend.right, lo_col, style, lineWidth)
     if useHLZones
@@ -586,7 +585,7 @@ for x = 0 to array.size(sr_lines) - 1
     line.delete(array.get(sr_linesH, x))
     line.delete(array.get(sr_linesL, x))
     linefill.delete(array.get(sr_linesF, x))
-    if not na(array.get(sr_levs, x)) and enableSR and not isBlockedTF
+    if not na(array.get(sr_levs, x)) and enableSR
         line_col = close >= array.get(sr_levs, x) ? colorSup : colorRes
         array.set(sr_lines, x, line.new(bar_index - 355, array.get(sr_levs, x), bar_index, array.get(sr_levs, x), xloc.bar_index, expandSR ? extend.both : extend.right, line_col, style, lineWidth))
         if useZones
@@ -595,12 +594,12 @@ for x = 0 to array.size(sr_lines) - 1
             array.set(sr_linesF, x, linefill.new(array.get(sr_linesH, x), array.get(sr_linesL, x), line_col))
 for x = 0 to array.size(sr_labels) - 1
     label.delete(array.get(sr_labels, x))
-    if not na(array.get(sr_levs, x)) and enableSR and not isBlockedTF
+    if not na(array.get(sr_levs, x)) and enableSR
         lab_loc = close >= array.get(sr_levs, x) ? label.style_label_up : label.style_label_down
         lab_col = close >= array.get(sr_levs, x) ? colorSup             : colorRes
         array.set(sr_labels, x, label.new(bar_index + label_loc, array.get(sr_levs, x), str.tostring(math.round_to_mintick(array.get(sr_levs, x))), color=lab_col , textcolor=#000000, style=lab_loc))
-hlabel := enableSR and not isBlockedTF ? label.new(bar_index + label_loc + math.round(math.sign(label_loc)) * 20, highestph, "High Level : " + str.tostring(highestph), color=hi_col, textcolor=#000000, style=label.style_label_down) : na
-llabel := enableSR and not isBlockedTF ? label.new(bar_index + label_loc + math.round(math.sign(label_loc)) * 20, lowestpl , "Low  Level : " + str.tostring(lowestpl) , color=lo_col, textcolor=#000000, style=label.style_label_up  ) : na
+hlabel := enableSR ? label.new(bar_index + label_loc + math.round(math.sign(label_loc)) * 20, highestph, "High Level : " + str.tostring(highestph), color=hi_col, textcolor=#000000, style=label.style_label_down) : na
+llabel := enableSR ? label.new(bar_index + label_loc + math.round(math.sign(label_loc)) * 20, lowestpl , "Low  Level : " + str.tostring(lowestpl) , color=lo_col, textcolor=#000000, style=label.style_label_up  ) : na
 
 
 // Get components
@@ -825,7 +824,7 @@ shortTP1     = tp1Short  and condition[1] == -1.0 and condition == -1.1
 
 // ——————————— <strategy_calls> {
 //<long orders>
-if strategy.position_size <= 0 and longE and barstate.isconfirmed
+if not isBlockedTF and strategy.position_size <= 0 and longE and barstate.isconfirmed
     strategy.entry(
       'Long',
       strategy.long,
@@ -870,7 +869,7 @@ if longX
       alert_message    = i_lxMsg,
       comment          = 'LX')
 //<short orders>
-if strategy.position_size >= 0 and shortE and barstate.isconfirmed
+if not isBlockedTF and strategy.position_size >= 0 and shortE and barstate.isconfirmed
     strategy.entry(
       'Short',
       strategy.short,
@@ -923,14 +922,14 @@ c_entry      = leTrigger or seTrigger ? na :
 c_sl         = leTrigger or seTrigger ? na :
                condition == 0.0       ? na : color.red
 p_tp1Line    = plot (
-  i_tp1On and not isBlockedTF and (condition ==  1.0 or
+  i_tp1On and (condition ==  1.0 or
   condition == -1.0) ? tp1Line : na,
   title      = "TP Line 1",
   color      = c_tp,
   linewidth  = 1,
   style      = plot.style_linebr)
 p_tp2Line    = plot (
-  i_tp2On and not isBlockedTF and (condition ==  1.0 or
+  i_tp2On and (condition ==  1.0 or
   condition == -1.0 or
   condition ==  1.1 or
   condition == -1.1) ? tp2Line : na,
@@ -939,7 +938,7 @@ p_tp2Line    = plot (
   linewidth  = 1,
   style      = plot.style_linebr)
 p_tp3Line    = plot (
-  i_tp3On and not isBlockedTF and (condition ==  1.0 or
+  i_tp3On and (condition ==  1.0 or
   condition == -1.0 or
   condition ==  1.1 or
   condition == -1.1 or
@@ -950,14 +949,14 @@ p_tp3Line    = plot (
   linewidth  = 1,
   style      = plot.style_linebr)
 p_entryLine  = plot (
-  not isBlockedTF and (condition >=  1.0 or
+  (condition >=  1.0 or
   condition <= -1.0) ? entryLine : na,
   title      = "Entry Line",
   color      = c_entry,
   linewidth  = 1,
   style      = plot.style_linebr)
 p_slLine     = plot (
-  not isBlockedTF and (condition ==  1.0 or
+  (condition ==  1.0 or
   condition == -1.0 or
   condition ==  1.1 or
   condition == -1.1 or
@@ -976,7 +975,7 @@ fill(
 
 //<alerts labels>
 plotshape(
-  i_alertOn and not isBlockedTF and longE,
+  i_alertOn and longE,
   title      = 'Long',
   text       = 'Long',
   textcolor  = color.white,
@@ -985,7 +984,7 @@ plotshape(
   size       = size.tiny,
   location   = location.belowbar)
 plotshape(
-  i_alertOn and not isBlockedTF and shortE,
+  i_alertOn and shortE,
   title      = 'Short',
   text       = 'Short',
   textcolor  = color.white,
@@ -994,7 +993,7 @@ plotshape(
   size       = size.tiny,
   location   = location.abovebar)
 plotshape(
-  i_alertOn and not isBlockedTF and (longX or shortX) ? close : na,
+  i_alertOn and (longX or shortX) ? close : na,
   title      = 'Close',
   text       = 'Close',
   textcolor  = color.white,
@@ -1002,7 +1001,7 @@ plotshape(
   style      = shape.labelup,
   size       = size.tiny,
   location   = location.absolute)
-l_tp         = i_alertOn and i_tp1On and not isBlockedTF and (longTP1 or shortTP1) ? close : na
+l_tp         = i_alertOn and i_tp1On and (longTP1 or shortTP1) ? close : na
 plotshape(
   l_tp,
   title      = "TP1 Cross",
@@ -1013,7 +1012,7 @@ plotshape(
   size       = size.tiny,
   location   = location.absolute)
 plotshape(
-  i_alertOn and i_tp2On and not isBlockedTF and (longTP2 or shortTP2) ? close : na,
+  i_alertOn and i_tp2On and (longTP2 or shortTP2) ? close : na,
   title      = "TP2 Cross",
   text       = "TP2",
   textcolor  = color.white,
@@ -1022,7 +1021,7 @@ plotshape(
   size       = size.tiny,
   location   = location.absolute)
 plotshape(
-  i_alertOn and i_tp3On and not isBlockedTF and (longTP3 or shortTP3) ? close : na,
+  i_alertOn and i_tp3On and (longTP3 or shortTP3) ? close : na,
   title      = "TP3 Cross",
   text       = "TP3",
   textcolor  = color.white,
@@ -1031,7 +1030,7 @@ plotshape(
   size       = size.tiny,
   location   = location.absolute)
 plotshape(
-  i_alertOn and not isBlockedTF and (longSL or shortSL) ? close : na,
+  i_alertOn and (longSL or shortSL) ? close : na,
   title      = "SL Cross",
   text       = "SL",
   textcolor  = color.white,
@@ -1085,25 +1084,25 @@ l_right      = 10
 
 line.delete(
   f_qDq(a_slLine,
-  not isBlockedTF ? line.new(
+  line.new(
    entryIndex,
    slLine,
    last_bar_index + l_right,
    slLine,
    style = line.style_solid,
-   color = c_sl) : na))
+   color = c_sl)))
 line.delete(
   f_qDq(a_entryLine,
-  not isBlockedTF ? line.new(
+  line.new(
    entryIndex,
    entryLine,
    last_bar_index + l_right,
    entryLine,
    style = line.style_solid,
-   color = color.blue) : na))
+   color = color.blue)))
 line.delete(
   f_qDq(a_tp3Line,
-  i_tp3On and not isBlockedTF ? line.new(
+  i_tp3On ? line.new(
    entryIndex,
    tp3Line,
    last_bar_index + l_right,
@@ -1112,7 +1111,7 @@ line.delete(
    color = c_tp) : na))
 line.delete(
   f_qDq(a_tp2Line,
-  i_tp2On and not isBlockedTF ? line.new(
+  i_tp2On ? line.new(
    entryIndex,
    tp2Line,
    last_bar_index + l_right,
@@ -1121,7 +1120,7 @@ line.delete(
    color = c_tp) : na))
 line.delete(
   f_qDq(a_tp1Line,
-  i_tp1On and not isBlockedTF ? line.new(
+  i_tp1On ? line.new(
    entryIndex,
    tp1Line,
    last_bar_index + l_right,
@@ -1131,25 +1130,25 @@ line.delete(
 
 label.delete(
   f_qDq(a_slLabel,
-  not isBlockedTF ? label.new(
+  label.new(
    last_bar_index + l_right,
    slLine,
    'SL: ' + str.tostring(slLine, '##.###'),
    style = label.style_label_left,
    textcolor  = color.white,
-   color = c_sl) : na))
+   color = c_sl)))
 label.delete(
   f_qDq(a_entryLabel,
-  not isBlockedTF ? label.new(
+  label.new(
    last_bar_index + l_right,
    entryLine,
    'Entry: ' + str.tostring(entryLine, '##.###'),
    style = label.style_label_left,
    textcolor  = color.white,
-   color = color.blue) : na))
+   color = color.blue)))
 label.delete(
   f_qDq(a_tp3label,
-  i_tp3On and not isBlockedTF ? label.new(
+  i_tp3On ? label.new(
    last_bar_index + l_right,
    tp3Line,
    'TP3: ' + str.tostring(tp3Line, '##.###'),
@@ -1158,7 +1157,7 @@ label.delete(
    color = c_tp) : na))
 label.delete(
   f_qDq(a_tp2label,
-  i_tp2On and not isBlockedTF ? label.new(
+  i_tp2On ? label.new(
    last_bar_index + l_right,
    tp2Line,
    'TP2: ' + str.tostring(tp2Line, '##.###'),
@@ -1167,7 +1166,7 @@ label.delete(
    color = c_tp) : na))
 label.delete(
   f_qDq(a_tp1label,
-  i_tp1On and not isBlockedTF ? label.new(
+  i_tp1On ? label.new(
    last_bar_index + l_right,
    tp1Line,
    'TP1: ' + str.tostring(tp1Line, '##.###'),
@@ -1181,7 +1180,7 @@ label.delete(
 //#region ———— <↓↓↓ G_SCRIPT03 ↓↓↓> {
 c_barCol = close > open ? color.rgb(120, 9, 139) : color.rgb(69, 155, 225)
 barcolor(
-  i_barColOn and not isBlockedTF ? c_barCol : na)
+  i_barColOn ? c_barCol : na)
 
 // ——————————— <alerts>
 //<any_alert_function_call>
