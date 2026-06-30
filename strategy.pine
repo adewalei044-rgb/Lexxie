@@ -65,8 +65,6 @@ zigzag_color              = input.color(#00000000, 'Zig Zag', group = 'Visual Se
 
 //END SETTINGS
 
-// ——— Suppress all visual output on 5m, 10m and 15m timeframes
-isBlockedTF = timeframe.period == "1" or timeframe.period == "5" or timeframe.period == "10" or timeframe.period == "15" or timeframe.period == "60"
 
 //FUNCTIONS
 
@@ -824,7 +822,7 @@ shortTP1     = tp1Short  and condition[1] == -1.0 and condition == -1.1
 
 // ——————————— <strategy_calls> {
 //<long orders>
-if not isBlockedTF and strategy.position_size <= 0 and longE and barstate.isconfirmed
+if strategy.position_size <= 0 and longE and barstate.isconfirmed
     strategy.entry(
       'Long',
       strategy.long,
@@ -869,7 +867,7 @@ if longX
       alert_message    = i_lxMsg,
       comment          = 'LX')
 //<short orders>
-if not isBlockedTF and strategy.position_size >= 0 and shortE and barstate.isconfirmed
+if strategy.position_size >= 0 and shortE and barstate.isconfirmed
     strategy.entry(
       'Short',
       strategy.short,
