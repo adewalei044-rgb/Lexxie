@@ -871,7 +871,7 @@ if strategy.position_size >= 0 and shortE and barstate.isconfirmed
     strategy.entry(
       'Short',
       strategy.short,
-      alert_message    = i_leMsg,
+      alert_message    = i_seMsg,
       comment          = 'SE')
 if strategy.position_size < 0 and condition == -1.0
     strategy.exit(
