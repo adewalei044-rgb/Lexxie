@@ -754,6 +754,17 @@ i_tp1On      = input.bool       (true,      'TP1 On/Off'                   , gro
 i_tp2On      = input.bool       (true,      'TP2 On/Off'                   , group = G_DISPLAY)
 i_tp3On      = input.bool       (true,      'TP3 On/Off'                   , group = G_DISPLAY)
 
+G_SESSIONS   = '■ ' + 'Sessions'
+i_asiaOn     = input.bool    (true,                           'Asia On/Off'   , group = G_SESSIONS)
+i_asiaTime   = input.session ('0000-0900',                    'Asia Time (UTC)', group = G_SESSIONS)
+i_asiaColor  = input.color   (color.new(color.yellow,  90),  'Asia Color'    , group = G_SESSIONS)
+i_londonOn   = input.bool    (true,                           'London On/Off' , group = G_SESSIONS)
+i_londonTime = input.session ('0700-1600',                    'London Time (UTC)', group = G_SESSIONS)
+i_londonColor= input.color   (color.new(color.blue,    90),  'London Color'  , group = G_SESSIONS)
+i_nyOn       = input.bool    (true,                           'NY On/Off'     , group = G_SESSIONS)
+i_nyTime     = input.session ('1200-2100',                    'NY Time (UTC)' , group = G_SESSIONS)
+i_nyColor    = input.color   (color.new(color.green,   90),  'NY Color'      , group = G_SESSIONS)
+
 // ——————————— <function_declarations>
 // @function        Calculate the Take Profit line, and the crossover or crossunder
 f_tp(_condition, _conditionValue, _leTrigger, _seTrigger, _src, _lxLvlTP, _sxLvlTP)=>
@@ -1200,6 +1211,14 @@ label.delete(
 c_barCol = close > open ? color.rgb(120, 9, 139) : color.rgb(69, 155, 225)
 barcolor(
   i_barColOn ? c_barCol : na)
+
+// ——————————— <sessions>
+inAsia   = i_asiaOn   and not na(time(timeframe.period, i_asiaTime,   'UTC'))
+inLondon = i_londonOn and not na(time(timeframe.period, i_londonTime, 'UTC'))
+inNY     = i_nyOn     and not na(time(timeframe.period, i_nyTime,     'UTC'))
+bgcolor(inAsia   ? i_asiaColor  : na, title = 'Asia Session')
+bgcolor(inLondon ? i_londonColor: na, title = 'London Session')
+bgcolor(inNY     ? i_nyColor    : na, title = 'NY Session')
 
 // ——————————— <alerts>
 //<any_alert_function_call>
