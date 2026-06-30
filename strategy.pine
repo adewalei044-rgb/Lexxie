@@ -1270,7 +1270,7 @@ var table statsTable = table.new(
   bgcolor       = color.new(color.black, 15))
 
 if i_statsOn and (barstate.islast or barstate.isrealtime)
-    table.cell(statsTable, 0, 0, 'LEXXIE 22 STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(statsTable, 0, 0, 'LEXXIE 3 STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
     table.merge_cells(statsTable, 0, 0, 1, 0)
 
     altLabel = useRes ? 'Alt Strategy' : 'Standard'
