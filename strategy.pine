@@ -6,8 +6,8 @@
 //@version=6
 VERSION                   = 'v6_1_23'// 2023.10.13
 strategy(
-  'LEXXIE',
-  shorttitle              = 'LEXXIE ' + VERSION,
+  'LEXXIE 2',
+  shorttitle              = 'LEXXIE 2 ' + VERSION,
   overlay                 = true,
   explicit_plot_zorder    = true,
   pyramiding              = 0,
@@ -1231,7 +1231,7 @@ var table statsTable = table.new(
   bgcolor       = color.new(color.black, 15))
 
 if i_statsOn and (barstate.islast or barstate.isrealtime)
-    table.cell(statsTable, 0, 0, 'LEXXIE STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(statsTable, 0, 0, 'LEXXIE 2 STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
     table.merge_cells(statsTable, 0, 0, 1, 0)
 
     altLabel = useRes ? 'Alt Strategy' : 'Standard'
