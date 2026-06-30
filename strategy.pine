@@ -407,7 +407,7 @@ var target_bear = 0.
 /////////////////////////////////////////////
 // Create non-repainting security function
 rp_security(_symbol, _res, _src) =>
-    request.security(_symbol, _res, _src[barstate.isrealtime ? 1 : 0])
+    request.security(_symbol, _res, _src[barstate.isconfirmed ? 0 : 1])
 
 htfHigh = rp_security(syminfo.tickerid, res, high)
 htfLow  = rp_security(syminfo.tickerid, res, low)
@@ -651,15 +651,13 @@ variant(type, src, len, offSig, offALMA) =>
     type == 'EMA' ? v2 : type == 'DEMA' ? v3 : type == 'TEMA' ? v4 : type == 'WMA' ? v5 : type == 'VWMA' ? v6 : type == 'SMMA' ? v7 : type == 'HullMA' ? v8 : type == 'LSMA' ? v9 : type == 'ALMA' ? v10 : type == 'TMA' ? v11 : type == 'SSMA' ? v12 : v1
 
 // security wrapper for repeat calls
-// NON-REPAINTING FIX: reference the prior bar's value while the current bar is
-// still forming (barstate.isrealtime). request.security(..., lookahead_on) only
-// avoids repainting on already-closed historical bars; on the live/forming bar it
-// will otherwise keep re-evaluating as the alternate-resolution bar builds, which
-// is what made signals/labels appear immediately and then visibly shift for a few
-// candles until that higher-timeframe bar closed. This mirrors the same pattern
-// already used by rp_security() above for htfHigh/htfLow.
+// NON-REPAINTING FIX: use offset 1 while the bar is still forming (isconfirmed=false)
+// and offset 0 only at bar close (isconfirmed=true). This fires the signal at the
+// exact bar close rather than one bar late. The old isrealtime flag was true even at
+// bar close, which caused the offset-1 delay to persist through the closing tick,
+// pushing entries to the next bar.
 reso(exp, use, res) =>
-    security_1 = request.security(syminfo.tickerid, res, exp[barstate.isrealtime ? 1 : 0], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+    security_1 = request.security(syminfo.tickerid, res, exp[barstate.isconfirmed ? 0 : 1], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
     use ? security_1 : exp
 
 // === /BASE FUNCTIONS ===
