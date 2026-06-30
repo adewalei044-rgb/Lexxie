@@ -976,7 +976,7 @@ fill(
 
 //<alerts labels>
 plotshape(
-  i_alertOn and longEDisplay,
+  i_alertOn and longE,
   title      = 'Long',
   text       = 'Long',
   textcolor  = color.white,
@@ -985,7 +985,7 @@ plotshape(
   size       = size.tiny,
   location   = location.belowbar)
 plotshape(
-  i_alertOn and shortEDisplay,
+  i_alertOn and shortE,
   title      = 'Short',
   text       = 'Short',
   textcolor  = color.white,
