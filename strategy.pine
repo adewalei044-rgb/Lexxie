@@ -6,8 +6,8 @@
 //@version=6
 VERSION                   = 'v6_1_23'// 2023.10.13
 strategy(
-  'LEXXIE 3',
-  shorttitle              = 'LEXXIE 3 ' + VERSION,
+  'LEXXIE 4',
+  shorttitle              = 'LEXXIE 4 ' + VERSION,
   overlay                 = true,
   explicit_plot_zorder    = true,
   pyramiding              = 0,
@@ -746,6 +746,7 @@ i_src        = close
 
 G_DISPLAY    = 'Display'
 //<display>
+i_stratName  = input.string     ('LEXXIE 4','Strategy Name'                , group = G_DISPLAY)
 i_alertOn    = input.bool       (true,      'Alert Labels On/Off'          , group = G_DISPLAY)
 i_barColOn   = input.bool       (true,      'Bar Color On/Off'             , group = G_DISPLAY)
 i_statsOn    = input.bool       (true,      'Stats Table On/Off'           , group = G_DISPLAY)
@@ -1270,7 +1271,7 @@ var table statsTable = table.new(
   bgcolor       = color.new(color.black, 15))
 
 if i_statsOn and (barstate.islast or barstate.isrealtime)
-    table.cell(statsTable, 0, 0, 'LEXXIE 3 STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(statsTable, 0, 0, i_stratName + ' STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
     table.merge_cells(statsTable, 0, 0, 1, 0)
 
     altLabel = useRes ? 'Alt Strategy' : 'Standard'
