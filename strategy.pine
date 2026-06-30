@@ -1210,6 +1210,19 @@ if isNewDay
     dailyLossCount  := 0
     tradeOutcounted := false
 
+// Count trade closed by reversal before resetting for the new entry
+if (longE or shortE) and not tradeOutcounted and strategy.position_size != 0
+    if strategy.position_size > 0
+        if close >= strategy.position_avg_price
+            dailyWinCount  += 1
+        else
+            dailyLossCount += 1
+    else
+        if close <= strategy.position_avg_price
+            dailyWinCount  += 1
+        else
+            dailyLossCount += 1
+
 if longE or shortE
     tradeOutcounted := false
 
