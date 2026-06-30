@@ -509,7 +509,7 @@ var sr_linesH = array.new_line(21, na)
 var sr_linesL = array.new_line(21, na)
 var sr_linesF = array.new_linefill(21, na)
 var sr_labels = array.new_label(21, na)
-if ph or pl
+if not na(ph) or not na(pl)
     for x = 0 to array.size(sr_levels) - 1
         array.set(sr_levels, x, na)
     highestph := prdlowest
@@ -525,8 +525,8 @@ if ph or pl
             if countpp > 40
                 break
             if array.get(aas, countpp)
-                upl = (ph[x] ? high[x + rb] : low[x + rb]) + cwidth
-                dnl = (ph[x] ? high[x + rb] : low[x + rb]) - cwidth
+                upl = (not na(ph[x]) ? high[x + rb] : low[x + rb]) + cwidth
+                dnl = (not na(ph[x]) ? high[x + rb] : low[x + rb]) - cwidth
                 u1 := countpp == 1 ? upl : u1
                 d1 := countpp == 1 ? dnl : d1
                 tmp = array.new_bool(41, true)
@@ -555,9 +555,9 @@ if ph or pl
                     for g = 0 to 40 by 1
                         if not array.get(tmp, g)
                             array.set(aas, g, false)
-                    if ph[x] and countpp < 21
+                    if not na(ph[x]) and countpp < 21
                         array.set(sr_levels, countpp, high[x + rb])
-                    if pl[x] and countpp < 21
+                    if not na(pl[x]) and countpp < 21
                         array.set(sr_levels, countpp, low[x + rb])
 // Plot
 var line highest_      = na, line.delete(highest_)
@@ -578,7 +578,7 @@ if enableSR and not isBlockedTF
         lowest_fill2  := line.new(bar_index - 311, lowestpl - zonePerc , bar_index, lowestpl - zonePerc , xloc.bar_index, expandSR ? extend.both : extend.right, na)
         linefill.new(highest_fill1, highest_fill2, hi_col)
         linefill.new(lowest_fill1 , lowest_fill2 , lo_col)
-if ph or pl
+if not na(ph) or not na(pl)
     for x = 0 to array.size(sr_lines) - 1
         array.set(sr_levs, x, array.get(sr_levels, x))
 for x = 0 to array.size(sr_lines) - 1
@@ -586,7 +586,7 @@ for x = 0 to array.size(sr_lines) - 1
     line.delete(array.get(sr_linesH, x))
     line.delete(array.get(sr_linesL, x))
     linefill.delete(array.get(sr_linesF, x))
-    if array.get(sr_levs, x) and enableSR and not isBlockedTF
+    if not na(array.get(sr_levs, x)) and enableSR and not isBlockedTF
         line_col = close >= array.get(sr_levs, x) ? colorSup : colorRes
         array.set(sr_lines, x, line.new(bar_index - 355, array.get(sr_levs, x), bar_index, array.get(sr_levs, x), xloc.bar_index, expandSR ? extend.both : extend.right, line_col, style, lineWidth))
         if useZones
@@ -595,7 +595,7 @@ for x = 0 to array.size(sr_lines) - 1
             array.set(sr_linesF, x, linefill.new(array.get(sr_linesH, x), array.get(sr_linesL, x), line_col))
 for x = 0 to array.size(sr_labels) - 1
     label.delete(array.get(sr_labels, x))
-    if array.get(sr_levs, x) and enableSR and not isBlockedTF
+    if not na(array.get(sr_levs, x)) and enableSR and not isBlockedTF
         lab_loc = close >= array.get(sr_levs, x) ? label.style_label_up : label.style_label_down
         lab_col = close >= array.get(sr_levs, x) ? colorSup             : colorRes
         array.set(sr_labels, x, label.new(bar_index + label_loc, array.get(sr_levs, x), str.tostring(math.round_to_mintick(array.get(sr_levs, x))), color=lab_col , textcolor=#000000, style=lab_loc))
@@ -605,8 +605,9 @@ llabel := enableSR and not isBlockedTF ? label.new(bar_index + label_loc + math.
 
 // Get components
 rsi       = ta.rsi(close, 28)
-rsiOb     = rsi > 65 and rsi > ta.ema(rsi, 10)
-rsiOs     = rsi < 35 and rsi < ta.ema(rsi, 10)
+rsiEma    = ta.ema(rsi, 10)
+rsiOb     = rsi > 65 and rsi > rsiEma
+rsiOs     = rsi < 35 and rsi < rsiEma
 dHigh     = securityNoRep(syminfo.tickerid, "D", high [1])
 dLow      = securityNoRep(syminfo.tickerid, "D", low  [1])
 dClose    = securityNoRep(syminfo.tickerid, "D", close[1])
@@ -616,7 +617,7 @@ equal_tf(res) => str.tonumber(res) == f_chartTfInMinutes() and not timeframe.iss
 higher_tf(res) => str.tonumber(res) > f_chartTfInMinutes() or timeframe.isseconds
 too_small_tf(res) => (timeframe.isweekly and res=="1") or (timeframe.ismonthly and str.tonumber(res) < 10)
 securityNoRep1(sym, res, src) =>
-    bool bull_ = na
+    bool bull_ = false
     bull_ := equal_tf(res) ? src : bull_
     bull_ := higher_tf(res) ? request.security(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on) : bull_
     bull_array = request.security_lower_tf(syminfo.tickerid, higher_tf(res) ? str.tostring(f_chartTfInMinutes()) + (timeframe.isseconds ? "S" : "") : too_small_tf(res) ? (timeframe.isweekly ? "3" : "10") : res, src)
