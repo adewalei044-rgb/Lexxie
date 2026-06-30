@@ -1231,7 +1231,7 @@ var table statsTable = table.new(
   frame_color   = color.gray,
   bgcolor       = color.new(color.black, 15))
 
-if i_statsOn and not isBlockedTF and barstate.islast
+if i_statsOn and barstate.islast
     table.cell(statsTable, 0, 0, 'STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
     table.merge_cells(statsTable, 0, 0, 1, 0)
 
