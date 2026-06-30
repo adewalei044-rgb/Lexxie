@@ -1202,11 +1202,11 @@ barcolor(
 
 // ——————————— <alerts>
 //<any_alert_function_call>
-if (longE and strategy.position_size <= 0) or (shortE and strategy.position_size >= 0) or longX or shortX
+if longE or shortE or longX or shortX
     alert(message = 'Any Alert',   freq = alert.freq_once_per_bar_close)
-if longE and strategy.position_size <= 0
+if longE
     alert(message = i_leMsg,       freq = alert.freq_once_per_bar_close)
-if shortE and strategy.position_size >= 0
+if shortE
     alert(message = i_seMsg,       freq = alert.freq_once_per_bar_close)
 if longX
     alert(message = i_lxMsg,       freq = alert.freq_once_per_bar_close)
