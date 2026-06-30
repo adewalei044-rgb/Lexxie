@@ -6,8 +6,8 @@
 //@version=6
 VERSION                   = 'v6_1_23'// 2023.10.13
 strategy(
-  'LEXXIE 22',
-  shorttitle              = 'LEXXIE 22 ' + VERSION,
+  'LEXXIE 3',
+  shorttitle              = 'LEXXIE 3 ' + VERSION,
   overlay                 = true,
   explicit_plot_zorder    = true,
   pyramiding              = 0,
@@ -1202,11 +1202,11 @@ barcolor(
 
 // ——————————— <alerts>
 //<any_alert_function_call>
-if longE or shortE or longX or shortX
+if (longE and strategy.position_size <= 0) or (shortE and strategy.position_size >= 0) or longX or shortX
     alert(message = 'Any Alert',   freq = alert.freq_once_per_bar_close)
-if longE
+if longE and strategy.position_size <= 0
     alert(message = i_leMsg,       freq = alert.freq_once_per_bar_close)
-if shortE
+if shortE and strategy.position_size >= 0
     alert(message = i_seMsg,       freq = alert.freq_once_per_bar_close)
 if longX
     alert(message = i_lxMsg,       freq = alert.freq_once_per_bar_close)
