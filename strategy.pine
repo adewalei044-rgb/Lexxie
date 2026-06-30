@@ -6,8 +6,8 @@
 //@version=6
 VERSION                   = 'v6_1_23'// 2023.10.13
 strategy(
-  'XXX',
-  shorttitle              = 'XXX ' + VERSION,
+  'LEXXIE',
+  shorttitle              = 'LEXXIE ' + VERSION,
   overlay                 = true,
   explicit_plot_zorder    = true,
   pyramiding              = 0,
@@ -1219,7 +1219,7 @@ peakEquity   := math.max(peakEquity, strategy.equity)
 drawdownPct  =  peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100 : 0.0
 
 totalClosed  = strategy.closedtrades
-winRatePct   = totalClosed > 0 ? strategy.wintrades / totalClosed * 100 : 0.0
+winRatePct   = totalClosed > 0 ? (float(strategy.wintrades) / float(totalClosed)) * 100.0 : 0.0
 
 // ——————————— <table>
 var table statsTable = table.new(
