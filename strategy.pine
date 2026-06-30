@@ -986,6 +986,17 @@ fill(
   p_entryLine, p_slLine,
   color      = leTrigger or seTrigger ? na :color.new(color.red, 90))
 
+// ——————————— <background>
+c_barCol = close > open ? color.rgb(120, 9, 139) : color.rgb(69, 155, 225)
+barcolor(
+  i_barColOn ? c_barCol : na)
+inAsia   = i_asiaOn   and not na(time(timeframe.period, i_asiaTime,   'UTC'))
+inLondon = i_londonOn and not na(time(timeframe.period, i_londonTime, 'UTC'))
+inNY     = i_nyOn     and not na(time(timeframe.period, i_nyTime,     'UTC'))
+bgcolor(inAsia   ? i_asiaColor  : na, title = 'Asia Session')
+bgcolor(inLondon ? i_londonColor: na, title = 'London Session')
+bgcolor(inNY     ? i_nyColor    : na, title = 'NY Session')
+
 //<alerts labels>
 plotshape(
   i_alertOn and longE,
@@ -1208,18 +1219,6 @@ label.delete(
 // ——————————— <↑↑↑ G_SCRIPT02 ↑↑↑>
 
 //#region ———— <↓↓↓ G_SCRIPT03 ↓↓↓> {
-c_barCol = close > open ? color.rgb(120, 9, 139) : color.rgb(69, 155, 225)
-barcolor(
-  i_barColOn ? c_barCol : na)
-
-// ——————————— <sessions>
-inAsia   = i_asiaOn   and not na(time(timeframe.period, i_asiaTime,   'UTC'))
-inLondon = i_londonOn and not na(time(timeframe.period, i_londonTime, 'UTC'))
-inNY     = i_nyOn     and not na(time(timeframe.period, i_nyTime,     'UTC'))
-bgcolor(inAsia   ? i_asiaColor  : na, title = 'Asia Session')
-bgcolor(inLondon ? i_londonColor: na, title = 'London Session')
-bgcolor(inNY     ? i_nyColor    : na, title = 'NY Session')
-
 // ——————————— <alerts>
 //<any_alert_function_call>
 if longE or shortE or longX or shortX
