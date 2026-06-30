@@ -1221,7 +1221,7 @@ winRatePct   = totalClosed > 0 ? (float(strategy.wintrades) / float(totalClosed)
 
 // ——————————— <table>
 var table statsTable = table.new(
-  position.top_right, 2, 5,
+  position.top_right, 2, 6,
   border_width  = 1,
   border_color  = color.gray,
   frame_width   = 1,
@@ -1229,19 +1229,24 @@ var table statsTable = table.new(
   bgcolor       = color.new(color.black, 15))
 
 if i_statsOn and (barstate.islast or barstate.isrealtime)
-    table.cell(statsTable, 0, 0, 'STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(statsTable, 0, 0, 'LEXXIE STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
     table.merge_cells(statsTable, 0, 0, 1, 0)
 
-    table.cell(statsTable, 0, 1, 'Win Rate',         text_color = color.white, text_halign = text.align_left)
-    table.cell(statsTable, 1, 1, str.tostring(winRatePct, '#.##') + '%', text_color = color.white, text_halign = text.align_right)
+    altLabel = useRes ? 'Alt Strategy' : 'Standard'
+    altCol   = useRes ? color.new(color.green, 30) : color.new(color.gray, 50)
+    table.cell(statsTable, 0, 1, 'Strategy',         text_color = color.white, text_halign = text.align_left,  bgcolor = altCol)
+    table.cell(statsTable, 1, 1, altLabel,            text_color = color.white, text_halign = text.align_right, bgcolor = altCol)
 
-    table.cell(statsTable, 0, 2, 'Win / Loss',       text_color = color.white, text_halign = text.align_left)
-    table.cell(statsTable, 1, 2, str.tostring(strategy.wintrades) + ' / ' + str.tostring(strategy.losstrades), text_color = color.white, text_halign = text.align_right)
+    table.cell(statsTable, 0, 2, 'Win Rate',         text_color = color.white, text_halign = text.align_left)
+    table.cell(statsTable, 1, 2, str.tostring(winRatePct, '#.##') + '%', text_color = color.white, text_halign = text.align_right)
 
-    table.cell(statsTable, 0, 3, 'Daily Win / Loss', text_color = color.white, text_halign = text.align_left)
-    table.cell(statsTable, 1, 3, str.tostring(dailyWinCount) + ' / ' + str.tostring(dailyLossCount), text_color = color.white, text_halign = text.align_right)
+    table.cell(statsTable, 0, 3, 'Win / Loss',       text_color = color.white, text_halign = text.align_left)
+    table.cell(statsTable, 1, 3, str.tostring(strategy.wintrades) + ' / ' + str.tostring(strategy.losstrades), text_color = color.white, text_halign = text.align_right)
 
-    table.cell(statsTable, 0, 4, 'Draw Down',        text_color = color.white, text_halign = text.align_left, bgcolor = color.new(color.red, 60))
-    table.cell(statsTable, 1, 4, str.tostring(drawdownPct, '#.##') + '%', text_color = color.white, text_halign = text.align_right, bgcolor = color.new(color.red, 60))
+    table.cell(statsTable, 0, 4, 'Daily Win / Loss', text_color = color.white, text_halign = text.align_left)
+    table.cell(statsTable, 1, 4, str.tostring(dailyWinCount) + ' / ' + str.tostring(dailyLossCount), text_color = color.white, text_halign = text.align_right)
+
+    table.cell(statsTable, 0, 5, 'Draw Down',        text_color = color.white, text_halign = text.align_left, bgcolor = color.new(color.red, 60))
+    table.cell(statsTable, 1, 5, str.tostring(drawdownPct, '#.##') + '%', text_color = color.white, text_halign = text.align_right, bgcolor = color.new(color.red, 60))
 //#endregion }
 // ——————————— <↑↑↑ G_STATS ↑↑↑>
