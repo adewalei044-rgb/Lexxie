@@ -748,6 +748,9 @@ G_DISPLAY    = 'Display'
 i_alertOn    = input.bool       (true,      'Alert Labels On/Off'          , group = G_DISPLAY)
 i_barColOn   = input.bool       (true,      'Bar Color On/Off'             , group = G_DISPLAY)
 i_statsOn    = input.bool       (true,      'Stats Table On/Off'           , group = G_DISPLAY)
+i_tp1On      = input.bool       (true,      'TP1 On/Off'                   , group = G_DISPLAY)
+i_tp2On      = input.bool       (true,      'TP2 On/Off'                   , group = G_DISPLAY)
+i_tp3On      = input.bool       (true,      'TP3 On/Off'                   , group = G_DISPLAY)
 
 // ——————————— <function_declarations>
 // @function        Calculate the Take Profit line, and the crossover or crossunder
@@ -919,14 +922,14 @@ c_entry      = leTrigger or seTrigger ? na :
 c_sl         = leTrigger or seTrigger ? na :
                condition == 0.0       ? na : color.red
 p_tp1Line    = plot (
-  not isBlockedTF and (condition ==  1.0 or
+  i_tp1On and not isBlockedTF and (condition ==  1.0 or
   condition == -1.0) ? tp1Line : na,
   title      = "TP Line 1",
   color      = c_tp,
   linewidth  = 1,
   style      = plot.style_linebr)
 p_tp2Line    = plot (
-  not isBlockedTF and (condition ==  1.0 or
+  i_tp2On and not isBlockedTF and (condition ==  1.0 or
   condition == -1.0 or
   condition ==  1.1 or
   condition == -1.1) ? tp2Line : na,
@@ -935,7 +938,7 @@ p_tp2Line    = plot (
   linewidth  = 1,
   style      = plot.style_linebr)
 p_tp3Line    = plot (
-  not isBlockedTF and (condition ==  1.0 or
+  i_tp3On and not isBlockedTF and (condition ==  1.0 or
   condition == -1.0 or
   condition ==  1.1 or
   condition == -1.1 or
@@ -965,7 +968,7 @@ p_slLine     = plot (
   style      = plot.style_linebr)
 fill(
   p_tp3Line, p_entryLine,
-  color      = leTrigger or seTrigger ? na :color.new(color.green, 90))
+  color      = i_tp3On and not (leTrigger or seTrigger) ? color.new(color.green, 90) : na)
 fill(
   p_entryLine, p_slLine,
   color      = leTrigger or seTrigger ? na :color.new(color.red, 90))
@@ -998,7 +1001,7 @@ plotshape(
   style      = shape.labelup,
   size       = size.tiny,
   location   = location.absolute)
-l_tp         = i_alertOn and not isBlockedTF and (longTP1 or shortTP1) ? close : na
+l_tp         = i_alertOn and i_tp1On and not isBlockedTF and (longTP1 or shortTP1) ? close : na
 plotshape(
   l_tp,
   title      = "TP1 Cross",
@@ -1009,7 +1012,7 @@ plotshape(
   size       = size.tiny,
   location   = location.absolute)
 plotshape(
-  i_alertOn and not isBlockedTF and (longTP2 or shortTP2) ? close : na,
+  i_alertOn and i_tp2On and not isBlockedTF and (longTP2 or shortTP2) ? close : na,
   title      = "TP2 Cross",
   text       = "TP2",
   textcolor  = color.white,
@@ -1018,7 +1021,7 @@ plotshape(
   size       = size.tiny,
   location   = location.absolute)
 plotshape(
-  i_alertOn and not isBlockedTF and (longTP3 or shortTP3) ? close : na,
+  i_alertOn and i_tp3On and not isBlockedTF and (longTP3 or shortTP3) ? close : na,
   title      = "TP3 Cross",
   text       = "TP3",
   textcolor  = color.white,
@@ -1099,7 +1102,7 @@ line.delete(
    color = color.blue) : na))
 line.delete(
   f_qDq(a_tp3Line,
-  not isBlockedTF ? line.new(
+  i_tp3On and not isBlockedTF ? line.new(
    entryIndex,
    tp3Line,
    last_bar_index + l_right,
@@ -1108,7 +1111,7 @@ line.delete(
    color = c_tp) : na))
 line.delete(
   f_qDq(a_tp2Line,
-  not isBlockedTF ? line.new(
+  i_tp2On and not isBlockedTF ? line.new(
    entryIndex,
    tp2Line,
    last_bar_index + l_right,
@@ -1117,7 +1120,7 @@ line.delete(
    color = c_tp) : na))
 line.delete(
   f_qDq(a_tp1Line,
-  not isBlockedTF ? line.new(
+  i_tp1On and not isBlockedTF ? line.new(
    entryIndex,
    tp1Line,
    last_bar_index + l_right,
@@ -1145,7 +1148,7 @@ label.delete(
    color = color.blue) : na))
 label.delete(
   f_qDq(a_tp3label,
-  not isBlockedTF ? label.new(
+  i_tp3On and not isBlockedTF ? label.new(
    last_bar_index + l_right,
    tp3Line,
    'TP3: ' + str.tostring(tp3Line, '##.###'),
@@ -1154,7 +1157,7 @@ label.delete(
    color = c_tp) : na))
 label.delete(
   f_qDq(a_tp2label,
-  not isBlockedTF ? label.new(
+  i_tp2On and not isBlockedTF ? label.new(
    last_bar_index + l_right,
    tp2Line,
    'TP2: ' + str.tostring(tp2Line, '##.###'),
@@ -1163,7 +1166,7 @@ label.delete(
    color = c_tp) : na))
 label.delete(
   f_qDq(a_tp1label,
-  not isBlockedTF ? label.new(
+  i_tp1On and not isBlockedTF ? label.new(
    last_bar_index + l_right,
    tp1Line,
    'TP1: ' + str.tostring(tp1Line, '##.###'),
