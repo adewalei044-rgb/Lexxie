@@ -3,7 +3,7 @@
 
 
 
-//@version=5
+//@version=6
 VERSION                   = 'v6_1_23'// 2023.10.13
 strategy(
   'XXX',
@@ -29,19 +29,19 @@ G_SCRIPT01   = '■ ' + 'SAIYAN OCC'
 
 // === INPUTS ===
 res                       = input.timeframe('15',  'TIMEFRAME', group ="NON REPAINT")
-useRes                    = input(true,            'Use Alternate Signals')
-intRes                    = input(8,               'Multiplier for Alernate Signals')
+useRes                    = input.bool(true,        'Use Alternate Signals')
+intRes                    = input.int(8,            'Multiplier for Alernate Signals')
 basisType                 = input.string('ALMA',   'MA Type: ', options=['TEMA', 'HullMA', 'ALMA'])
 basisLen                  = input.int(2,           'MA Period', minval=1)
 offsetSigma               = input.int(5,           'Offset for LSMA / Sigma for ALMA', minval=0)
 offsetALMA                = input.float(0.85,      'Offset for ALMA', minval=0, step=0.01)
-scolor                    = input(false,           'Show coloured Bars to indicate Trend?')
+scolor                    = input.bool(false,       'Show coloured Bars to indicate Trend?')
 delayOffset               = input.int(0,           'Delay Open/Close MA', minval=0, step=1,
                   tooltip = 'Forces Non-Repainting')
 tradeType                 = input.string('BOTH',   'What trades should be taken : ',
                   options = ['LONG', 'SHORT', 'BOTH', 'NONE'])
 //=== /INPUTS ===
-h                         = input(false,           'Signals for Heikin Ashi Candles')
+h                         = input.bool(false,       'Signals for Heikin Ashi Candles')
 //INDICATOR SETTINGS
 swing_length              = input.int(10,          'Swing High/Low Length', group = 'Settings', minval = 1, maxval = 50)
 history_of_demand_to_keep = input.int(20,          'History To Keep', minval = 5, maxval = 50)
@@ -470,17 +470,17 @@ f_findDivs(src, topLimit, botLimit) =>
     bullSignal = fractalBot and low[1] < lowPrice and src[1] > lowPrev
     [bearSignal, bullSignal]
     // Get user input
-enableSR   = input(false          , "SR On/Off", group="SR")
-colorSup   = input(#00000000        , "Support Color", group="SR")
-colorRes   = input(#00000000        , "Resistance Color", group="SR")
+enableSR   = input.bool(false       , "SR On/Off", group="SR")
+colorSup   = input.color(#00000000  , "Support Color", group="SR")
+colorRes   = input.color(#00000000  , "Resistance Color", group="SR")
 strengthSR = input.int(2          , "S/R Strength", 1, group="SR")
 lineStyle  = input.string("Dotted", "Line Style", ["Solid", "Dotted", "Dashed"], group="SR")
 lineWidth  = input.int(2          , "S/R Line Width", 1, group="SR")
-useZones   = input(true           , "Zones On/Off", group="SR")
-useHLZones = input(true           , "High Low Zones On/Off", group="SR")
+useZones   = input.bool(true        , "Zones On/Off", group="SR")
+useHLZones = input.bool(true        , "High Low Zones On/Off", group="SR")
 zoneWidth  = input.int(2          , "Zone Width %", 0,
    tooltip = "it's calculated using % of the distance between highest/lowest in last 300 bars", group="SR")
-expandSR   = input(true           , "Expand SR")
+expandSR   = input.bool(true        , "Expand SR")
 // Get components
 rb         = 10
 prd        = 284
