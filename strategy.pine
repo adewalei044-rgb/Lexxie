@@ -1199,21 +1199,27 @@ if shortX
 G_STATS = '■ ' + 'Stats Table'
 
 // ——————————— <calculations>
-var int   prevDayWins      = 0
-var int   prevDayLosses    = 0
 var int   dailyWinCount    = 0
 var int   dailyLossCount   = 0
+var bool  tradeOutcounted  = false
 var float peakEquity       = strategy.equity
 
 isNewDay = ta.change(time('D')) != 0
 if isNewDay
-    prevDayWins   := strategy.wintrades
-    prevDayLosses := strategy.losstrades
-    dailyWinCount  := 0
-    dailyLossCount := 0
+    dailyWinCount   := 0
+    dailyLossCount  := 0
+    tradeOutcounted := false
 
-dailyWinCount  := strategy.wintrades  - prevDayWins
-dailyLossCount := strategy.losstrades - prevDayLosses
+if longE or shortE
+    tradeOutcounted := false
+
+if not tradeOutcounted
+    if longTP1 or shortTP1
+        dailyWinCount   += 1
+        tradeOutcounted := true
+    else if longSL or shortSL
+        dailyLossCount  += 1
+        tradeOutcounted := true
 
 peakEquity   := math.max(peakEquity, strategy.equity)
 drawdownPct  =  peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100 : 0.0
