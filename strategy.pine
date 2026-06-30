@@ -1077,13 +1077,15 @@ var label[] a_tp2label   = array.new_label(1)
 var label[] a_tp1label   = array.new_label(1)
 var label[] a_entryLabel = array.new_label(1)
 
-// Track the bar where the real-time display signal first appeared so the
-// entry drawing can snap back to align with the label when confirmed.
+// Track the FIRST bar where the real-time display signal appears each cycle.
+// Stop overwriting once set — only the first firing per cycle matters because
+// that is the bar where the "Long"/"Short" plotshape label appears.
+// Reset both trackers after a confirmed entry so the next cycle starts fresh.
 var int longEDisplayBar  = 0
 var int shortEDisplayBar = 0
-if longEDisplay
+if longEDisplay  and longEDisplayBar  == 0
     longEDisplayBar  := bar_index
-if shortEDisplay
+if shortEDisplay and shortEDisplayBar == 0
     shortEDisplayBar := bar_index
 
 newEntry     = longE or shortE
@@ -1091,6 +1093,10 @@ entryIndex   = 1
 entryIndex  := longE  ? (longEDisplayBar  > 0 ? longEDisplayBar  : bar_index) :
                shortE ? (shortEDisplayBar > 0 ? shortEDisplayBar : bar_index) :
                nz(entryIndex[1])
+
+if longE or shortE
+    longEDisplayBar  := 0
+    shortEDisplayBar := 0
 lasTrade     = bar_index >= entryIndex
 l_right      = 10
 
