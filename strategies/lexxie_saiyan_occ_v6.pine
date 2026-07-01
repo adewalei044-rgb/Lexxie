@@ -963,8 +963,11 @@ fill(
   color      = leTrigger or seTrigger ? na :color.new(color.red, 90))
 
 //<alerts labels>
+// Gated on barstate.isconfirmed so a label only ever draws once its bar has
+// fully closed -- it will never appear and then vanish while a live candle
+// is still forming, and once drawn it stays on that exact bar permanently.
 plotshape(
-  i_alertOn and longE,
+  i_alertOn and longE and barstate.isconfirmed,
   title      = 'Buy Entry',
   text       = 'Buy',
   textcolor  = color.white,
@@ -973,7 +976,7 @@ plotshape(
   size       = size.tiny,
   location   = location.belowbar)
 plotshape(
-  i_alertOn and shortE,
+  i_alertOn and shortE and barstate.isconfirmed,
   title      = 'Sell Entry',
   text       = 'Sell',
   textcolor  = color.white,
@@ -982,7 +985,7 @@ plotshape(
   size       = size.tiny,
   location   = location.abovebar)
 plotshape(
-  i_alertOn and (longX or shortX) ? close : na,
+  i_alertOn and (longX or shortX) and barstate.isconfirmed ? close : na,
   title      = 'Close',
   text       = 'Close',
   textcolor  = color.white,
@@ -990,7 +993,7 @@ plotshape(
   style      = shape.labelup,
   size       = size.tiny,
   location   = location.absolute)
-l_tp         = i_alertOn and (longTP or shortTP) ? close : na
+l_tp         = i_alertOn and (longTP or shortTP) and barstate.isconfirmed ? close : na
 plotshape(
   l_tp,
   title      = "TP Cross",
@@ -1001,7 +1004,7 @@ plotshape(
   size       = size.tiny,
   location   = location.absolute)
 plotshape(
-  i_alertOn and (longSL or shortSL) ? close : na,
+  i_alertOn and (longSL or shortSL) and barstate.isconfirmed ? close : na,
   title      = "SL Cross",
   text       = "SL",
   textcolor  = color.white,
