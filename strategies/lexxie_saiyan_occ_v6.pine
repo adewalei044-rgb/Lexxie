@@ -690,7 +690,7 @@ higher_tf(res) => str.tonumber(res) > f_chartTfInMinutes() or timeframe.issecond
 too_small_tf(res) => (timeframe.isweekly and res=="1") or (timeframe.ismonthly and str.tonumber(res) < 10)
 securityNoRep1(sym, res, src) =>
     bull_array = request.security_lower_tf(syminfo.tickerid, higher_tf(res) ? str.tostring(f_chartTfInMinutes()) + (timeframe.isseconds ? "S" : "") : too_small_tf(res) ? (timeframe.isweekly ? "3" : "10") : res, src)
-    lowerTfBull = array.size(bull_array) > 1 and not equal_tf(res) and not higher_tf(res) ? array.pop(bull_array) : na
+    lowerTfBull = array.size(bull_array) > 1 and not equal_tf(res) and not higher_tf(res) ? array.pop(bull_array) : bool(na)
     array.clear(bull_array)
     equal_tf(res) ? src : higher_tf(res) ? request.security(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on) : lowerTfBull
 
