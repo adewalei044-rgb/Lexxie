@@ -878,7 +878,7 @@ barcolor(
 
 //<alerts labels>
 plotshape(
-  i_alertOn and longE,
+  i_alertOn and longEDisplay  and condition[1] <= 0.0,
   title      = 'Long',
   text       = 'Long',
   textcolor  = color.white,
@@ -887,7 +887,7 @@ plotshape(
   size       = size.tiny,
   location   = location.belowbar)
 plotshape(
-  i_alertOn and shortE,
+  i_alertOn and shortEDisplay and condition[1] >= 0.0,
   title      = 'Short',
   text       = 'Short',
   textcolor  = color.white,
