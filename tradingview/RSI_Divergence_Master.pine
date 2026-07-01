@@ -1,12 +1,14 @@
 //@version=6
 strategy("RSI Divergence Master - Regular, Hidden & Key Level", overlay = true,
-     initial_capital = input.float(10000, title = "Initial Capital", group = "Strategy Settings"),
+     initial_capital = 10000,
      default_qty_type = strategy.percent_of_equity,
-     default_qty_value = input.float(100, title = "Order Size (% of Equity)", minval = 1, maxval = 100, group = "Strategy Settings"),
+     default_qty_value = 100,
      commission_type = strategy.commission.percent,
-     commission_value = input.float(0.05, title = "Commission (%)", minval = 0, group = "Strategy Settings"),
+     commission_value = 0.05,
      process_orders_on_close = true,
      max_lines_count = 200, max_labels_count = 200, max_boxes_count = 200, max_bars_back = 500)
+// Initial Capital, Order Size and Commission are set above as strategy() defaults.
+// Adjust them without editing code via the Strategy Tester's "Properties" tab in TradingView.
 
 // =====================================================================================
 // Three-strategy RSI divergence framework with a single-position partial take-profit engine:
@@ -183,8 +185,11 @@ f_htf(rsiLenP, rsiSrcP, pvtLeftP, pvtRightP, maxBarsP, emaLenP, stochKP, stochSm
     bullLineValue = bullLineActive ? bullLineAnchorPrice + bullLineSlope * (bar_index - bullLineAnchorBar) : na
     bearLineValue = bearLineActive ? bearLineAnchorPrice + bearLineSlope * (bar_index - bearLineAnchorBar) : na
 
-    bullBreakoutV = bullLineActive and ta.crossunder(close, bullLineValue)
-    bearBreakoutV = bearLineActive and ta.crossover(close, bearLineValue)
+    bullLineCrossDown = ta.crossunder(close, bullLineValue)
+    bearLineCrossUp    = ta.crossover(close, bearLineValue)
+
+    bullBreakoutV = bullLineActive and bullLineCrossDown
+    bearBreakoutV = bearLineActive and bearLineCrossUp
 
     if bullBreakoutV
         bullLineActive := false
