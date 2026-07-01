@@ -1,0 +1,569 @@
+//@version=6
+strategy("RSI Divergence Master - Regular, Hidden & Key Level", overlay = true,
+     initial_capital = input.float(10000, title = "Initial Capital", group = "Strategy Settings"),
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = input.float(100, title = "Order Size (% of Equity)", minval = 1, maxval = 100, group = "Strategy Settings"),
+     commission_type = strategy.commission.percent,
+     commission_value = input.float(0.05, title = "Commission (%)", minval = 0, group = "Strategy Settings"),
+     process_orders_on_close = true,
+     max_lines_count = 200, max_labels_count = 200, max_boxes_count = 200, max_bars_back = 500)
+
+// =====================================================================================
+// Three-strategy RSI divergence framework with a single-position partial take-profit engine:
+//   1) Regular divergence  -> reversal, confirmed by a swing trend line break
+//   2) Hidden divergence    -> trend continuation, filtered by 200 EMA, triggered by Stochastic cross
+//   3) Key level divergence -> divergence + rejection candle + trend line break at a major S/R level
+//
+// Signal generation (pivots, divergence, key levels) runs on a separately selectable
+// "Analysis Timeframe" via request.security(). Entries/exits always execute on this
+// chart's own timeframe - apply the script to a 1m-1H chart for execution, and pick the
+// Analysis Timeframe in Settings for whatever timeframe you want divergence judged on.
+//
+// Only one position is held at a time. Stop loss %, daily trade limit and each RR target
+// (with partial close sizing and the breakeven stop move) are editable in Settings.
+//
+// Exits are submitted as market closes on the trigger (execution-timeframe) bar
+// (process_orders_on_close = true), so fills land at that bar's close rather than the
+// exact TP/SL price - a standard simplification.
+// =====================================================================================
+
+// ---------------------------- Inputs ----------------------------
+grpRSI = "RSI"
+rsiLen  = input.int(14, "RSI Length", group = grpRSI)
+rsiSrc  = input.source(close, "RSI Source", group = grpRSI)
+
+grpTF = "Analysis Timeframe"
+analysisTF = input.string("60", "Divergence / Key-Level Analysis Timeframe", options = ["1", "5", "10", "15", "60", "240", "D"], group = grpTF, tooltip = "1=1min, 5=5min, 10=10min, 15=15min, 60=1H, 240=4H, D=1Day. Pivots, divergence and key-level detection all run on this timeframe via request.security(). Entries/exits still execute on this chart's own timeframe (recommended 1m-1H) - the fill/stop/target checks use this chart's bars regardless of the Analysis Timeframe chosen here.")
+
+grpPivot = "Divergence Pivots"
+pvtLeft  = input.int(5, "Pivot Left Bars", minval = 1, group = grpPivot)
+pvtRight = input.int(5, "Pivot Right Bars", minval = 1, group = grpPivot)
+maxBars  = input.int(60, "Max Bars Between Pivots", minval = 5, group = grpPivot)
+
+grpTrend = "Hidden Divergence Trend Filter"
+emaLen   = input.int(200, "EMA Length", group = grpTrend)
+
+grpStoch = "Stochastic Confirmation"
+stochK       = input.int(14, "%K Length", group = grpStoch)
+stochSmoothK = input.int(3, "%K Smoothing", group = grpStoch)
+stochD       = input.int(3, "%D Smoothing", group = grpStoch)
+stochMaxWait = input.int(10, "Max Bars to Wait for Stoch Cross", group = grpStoch)
+
+grpLevel = "Key Level Confluence"
+lvlLeft     = input.int(15, "Key Level Pivot Left", group = grpLevel)
+lvlRight    = input.int(15, "Key Level Pivot Right", group = grpLevel)
+lvlLookback = input.int(300, "Key Level Memory (bars)", group = grpLevel)
+lvlTolPct   = input.float(0.25, "Proximity to Level (%)", minval = 0.01, group = grpLevel)
+wickRatio   = input.float(1.5, "Min Wick/Body Ratio for Rejection Candle", minval = 0.5, group = grpLevel)
+
+grpTradeOpt = "Trade Options"
+tradeRegular  = input.bool(true, "Enable Regular Divergence Trades", group = grpTradeOpt)
+tradeHidden   = input.bool(true, "Enable Hidden Divergence Trades", group = grpTradeOpt)
+tradeKeyLevel = input.bool(true, "Enable Key Level Divergence Trades", group = grpTradeOpt)
+
+grpRisk = "Risk Management"
+slPct           = input.float(1.0, "Stop Loss Limit (%)", minval = 0.01, step = 0.05, group = grpRisk)
+maxTradesPerDay = input.int(3, "Max Trades Per Day", minval = 1, group = grpRisk)
+
+grpRR = "Risk:Reward Targets"
+enableRR1 = input.bool(true, "Enable TP1", inline = "rr1", group = grpRR)
+rr1       = input.float(1.0, "RR", inline = "rr1", minval = 0.1, group = grpRR)
+enableRR2 = input.bool(true, "Enable TP2", inline = "rr2", group = grpRR)
+rr2       = input.float(2.0, "RR", inline = "rr2", minval = 0.1, group = grpRR)
+enableRR3 = input.bool(true, "Enable TP3", inline = "rr3", group = grpRR)
+rr3       = input.float(3.0, "RR", inline = "rr3", minval = 0.1, group = grpRR)
+
+grpPartial = "Partial Take-Profit Management"
+tp1ClosePct       = input.float(33, "TP1 Close % of Position", minval = 1, maxval = 100, group = grpPartial)
+tp2PartialPct     = input.float(25, "TP2 Close % of Position (only used when TP3 is enabled)", minval = 1, maxval = 100, group = grpPartial)
+moveStopToBEOnTP2 = input.bool(true, "Move Stop to Breakeven at TP2 (only when TP3 is enabled)", group = grpPartial)
+
+grpShow = "Display"
+showTrendLines = input.bool(true, "Show Divergence Trend Lines", group = grpShow)
+showKeyLevels  = input.bool(true, "Show Key S/R Levels", group = grpShow)
+showTradeDraw  = input.bool(true, "Show Long/Short Entry Drawings", group = grpShow)
+showDashboard  = input.bool(true, "Show Performance Dashboard", group = grpShow)
+
+// ---------------------------- HTF analysis function ----------------------------
+// Everything below runs inside request.security() at analysisTF: all built-ins (close,
+// high, low, open, bar_index, time) resolve to that timeframe's own bars. No drawing
+// objects are created here (not permitted inside request.security) - only booleans/values
+// are returned; the caller draws trend lines / key levels using xloc.bar_time so they line
+// up correctly on the execution chart regardless of the analysis timeframe chosen.
+f_htf(rsiLenP, rsiSrcP, pvtLeftP, pvtRightP, maxBarsP, emaLenP, stochKP, stochSmoothKP, stochDP, stochMaxWaitP, lvlLeftP, lvlRightP, lvlLookbackP, lvlTolPctP, wickRatioP) =>
+    rsiV      = ta.rsi(rsiSrcP, rsiLenP)
+    ema200V   = ta.ema(close, emaLenP)
+    stochRawV = ta.sma(ta.stoch(close, high, low, stochKP), stochSmoothKP)
+    stochDV   = ta.sma(stochRawV, stochDP)
+
+    isUptrendV   = close > ema200V
+    isDowntrendV = close < ema200V
+
+    phPriceV = ta.pivothigh(high, pvtLeftP, pvtRightP)
+    plPriceV = ta.pivotlow(low, pvtLeftP, pvtRightP)
+
+    var float lastPH     = na
+    var int   lastPHBar  = na
+    var float lastPHRsi  = na
+    var int   lastPHTime = na
+
+    var float lastPL     = na
+    var int   lastPLBar  = na
+    var float lastPLRsi  = na
+    var int   lastPLTime = na
+
+    bullRegularAtV = false
+    bearRegularAtV = false
+    bullHiddenAtV  = false
+    bearHiddenAtV  = false
+
+    var float bullLineSlope = na
+    var float bullLineAnchorPrice = na
+    var int   bullLineAnchorBar = na
+    var bool  bullLineActive = false
+
+    var float bearLineSlope = na
+    var float bearLineAnchorPrice = na
+    var int   bearLineAnchorBar = na
+    var bool  bearLineActive = false
+
+    int   bullNewX1 = na
+    float bullNewY1 = na
+    int   bullNewX2 = na
+    float bullNewY2 = na
+    int   bearNewX1 = na
+    float bearNewY1 = na
+    int   bearNewX2 = na
+    float bearNewY2 = na
+
+    if not na(plPriceV)
+        curBar   = bar_index - pvtRightP
+        curPrice = plPriceV
+        curRsi   = rsiV[pvtRightP]
+        curTime  = time[pvtRightP]
+        if not na(lastPL) and (curBar - lastPLBar) <= maxBarsP
+            bullRegularAtV := curPrice < lastPL and curRsi > lastPLRsi
+            bullHiddenAtV  := curPrice > lastPL and curRsi < lastPLRsi
+            if bullRegularAtV
+                bullLineSlope := (curPrice - lastPL) / (curBar - lastPLBar)
+                bullLineAnchorPrice := curPrice
+                bullLineAnchorBar := curBar
+                bullLineActive := true
+                bullNewX1 := lastPLTime
+                bullNewY1 := lastPL
+                bullNewX2 := curTime
+                bullNewY2 := curPrice
+        lastPL := curPrice
+        lastPLBar := curBar
+        lastPLRsi := curRsi
+        lastPLTime := curTime
+
+    if not na(phPriceV)
+        curBar   = bar_index - pvtRightP
+        curPrice = phPriceV
+        curRsi   = rsiV[pvtRightP]
+        curTime  = time[pvtRightP]
+        if not na(lastPH) and (curBar - lastPHBar) <= maxBarsP
+            bearRegularAtV := curPrice > lastPH and curRsi < lastPHRsi
+            bearHiddenAtV  := curPrice < lastPH and curRsi > lastPHRsi
+            if bearRegularAtV
+                bearLineSlope := (curPrice - lastPH) / (curBar - lastPHBar)
+                bearLineAnchorPrice := curPrice
+                bearLineAnchorBar := curBar
+                bearLineActive := true
+                bearNewX1 := lastPHTime
+                bearNewY1 := lastPH
+                bearNewX2 := curTime
+                bearNewY2 := curPrice
+        lastPH := curPrice
+        lastPHBar := curBar
+        lastPHRsi := curRsi
+        lastPHTime := curTime
+
+    bullLineValue = bullLineActive ? bullLineAnchorPrice + bullLineSlope * (bar_index - bullLineAnchorBar) : na
+    bearLineValue = bearLineActive ? bearLineAnchorPrice + bearLineSlope * (bar_index - bearLineAnchorBar) : na
+
+    bullBreakoutV = bullLineActive and ta.crossunder(close, bullLineValue)
+    bearBreakoutV = bearLineActive and ta.crossover(close, bearLineValue)
+
+    if bullBreakoutV
+        bullLineActive := false
+    if bearBreakoutV
+        bearLineActive := false
+
+    regularBullSignalV = bullBreakoutV
+    regularBearSignalV = bearBreakoutV
+
+    var int bullHiddenPendingBar = na
+    var int bearHiddenPendingBar = na
+
+    if bullHiddenAtV and isUptrendV
+        bullHiddenPendingBar := bar_index
+    if bearHiddenAtV and isDowntrendV
+        bearHiddenPendingBar := bar_index
+
+    stochCrossUpV   = ta.crossover(stochRawV, stochDV)
+    stochCrossDownV = ta.crossunder(stochRawV, stochDV)
+
+    hiddenBullSignalV = not na(bullHiddenPendingBar) and (bar_index - bullHiddenPendingBar) <= stochMaxWaitP and stochCrossUpV and isUptrendV
+    hiddenBearSignalV = not na(bearHiddenPendingBar) and (bar_index - bearHiddenPendingBar) <= stochMaxWaitP and stochCrossDownV and isDowntrendV
+
+    if hiddenBullSignalV
+        bullHiddenPendingBar := na
+    if hiddenBearSignalV
+        bearHiddenPendingBar := na
+
+    lvlPHV = ta.pivothigh(high, lvlLeftP, lvlRightP)
+    lvlPLV = ta.pivotlow(low, lvlLeftP, lvlRightP)
+
+    var array<float> resLevels = array.new_float()
+    var array<int>   resBars   = array.new_int()
+    var array<float> supLevels = array.new_float()
+    var array<int>   supBars   = array.new_int()
+
+    int lvlPHNewTime = na
+    int lvlPLNewTime = na
+
+    if not na(lvlPHV)
+        array.push(resLevels, lvlPHV)
+        array.push(resBars, bar_index - lvlRightP)
+        lvlPHNewTime := time[lvlRightP]
+    if not na(lvlPLV)
+        array.push(supLevels, lvlPLV)
+        array.push(supBars, bar_index - lvlRightP)
+        lvlPLNewTime := time[lvlRightP]
+
+    if array.size(resBars) > 0
+        for i = array.size(resBars) - 1 to 0
+            if bar_index - array.get(resBars, i) > lvlLookbackP
+                array.remove(resBars, i)
+                array.remove(resLevels, i)
+    if array.size(supBars) > 0
+        for i = array.size(supBars) - 1 to 0
+            if bar_index - array.get(supBars, i) > lvlLookbackP
+                array.remove(supBars, i)
+                array.remove(supLevels, i)
+
+    nearResistanceV = false
+    nearSupportV = false
+    if array.size(resLevels) > 0
+        for i = 0 to array.size(resLevels) - 1
+            lvl = array.get(resLevels, i)
+            if math.abs(close - lvl) / lvl * 100 <= lvlTolPctP
+                nearResistanceV := true
+    if array.size(supLevels) > 0
+        for i = 0 to array.size(supLevels) - 1
+            lvl = array.get(supLevels, i)
+            if math.abs(close - lvl) / lvl * 100 <= lvlTolPctP
+                nearSupportV := true
+
+    bodyRangeV = math.max(math.abs(close - open), syminfo.mintick)
+    upperWickV = high - math.max(close, open)
+    lowerWickV = math.min(close, open) - low
+
+    bullishRejectionV = nearSupportV and (lowerWickV >= wickRatioP * bodyRangeV)
+    bearishRejectionV = nearResistanceV and (upperWickV >= wickRatioP * bodyRangeV)
+
+    keyLevelBullSignalV = bullishRejectionV and bullBreakoutV
+    keyLevelBearSignalV = bearishRejectionV and bearBreakoutV
+
+    [regularBullSignalV, regularBearSignalV, hiddenBullSignalV, hiddenBearSignalV, keyLevelBullSignalV, keyLevelBearSignalV,
+     ema200V,
+     bullNewX1, bullNewY1, bullNewX2, bullNewY2,
+     bearNewX1, bearNewY1, bearNewX2, bearNewY2,
+     lvlPHV, lvlPHNewTime, lvlPLV, lvlPLNewTime]
+
+[regularBullSignalHTF, regularBearSignalHTF, hiddenBullSignalHTF, hiddenBearSignalHTF, keyLevelBullSignalHTF, keyLevelBearSignalHTF,
+ ema200HTF,
+ bullX1, bullY1, bullX2, bullY2,
+ bearX1, bearY1, bearX2, bearY2,
+ lvlPHPrice, lvlPHTime, lvlPLPrice, lvlPLTime] =
+     request.security(syminfo.tickerid, analysisTF, f_htf(rsiLen, rsiSrc, pvtLeft, pvtRight, maxBars, emaLen, stochK, stochSmoothK, stochD, stochMaxWait, lvlLeft, lvlRight, lvlLookback, lvlTolPct, wickRatio))
+
+// one clean edge-triggered pulse per analysis-timeframe event, on the execution chart
+regularBullSignal  = regularBullSignalHTF and not regularBullSignalHTF[1]
+regularBearSignal  = regularBearSignalHTF and not regularBearSignalHTF[1]
+hiddenBullSignal   = hiddenBullSignalHTF and not hiddenBullSignalHTF[1]
+hiddenBearSignal   = hiddenBearSignalHTF and not hiddenBearSignalHTF[1]
+keyLevelBullSignal = keyLevelBullSignalHTF and not keyLevelBullSignalHTF[1]
+keyLevelBearSignal = keyLevelBearSignalHTF and not keyLevelBearSignalHTF[1]
+
+// ---------------------------- Combined BUY / SELL entry signals ----------------------------
+longSignal  = (tradeRegular and regularBullSignal) or (tradeHidden and hiddenBullSignal) or (tradeKeyLevel and keyLevelBullSignal)
+shortSignal = (tradeRegular and regularBearSignal) or (tradeHidden and hiddenBearSignal) or (tradeKeyLevel and keyLevelBearSignal)
+
+// ---------------------------- Simulated trade tracking (executes on this chart's own bars) ----------------------------
+var float openEntry = na
+var float openStop  = na
+var float openTP1   = na
+var float openTP2   = na
+var float openTP3   = na
+var float openRR1   = na
+var float openRR2   = na
+var float openRR3   = na
+var int   openDir   = 0
+var int   openBar   = na
+
+var float initialRiskDist = na
+var float remainingFrac   = 0.0
+var float tradeRealizedR  = 0.0
+var bool  tp1Done = false
+var bool  tp2Done = false
+var bool  tp3Done = false
+
+var box   riskBox    = na
+var box   rewardBox  = na
+var line  entryLine  = na
+var line  tp2Line    = na
+var line  tp3Line    = na
+var label entryLabel = na
+
+var int   totalWins      = 0
+var int   totalLosses    = 0
+var int   dailyWins      = 0
+var int   dailyLosses    = 0
+var int   dailyTradeCount = 0
+var float cumR         = 0.0
+var float peakR        = 0.0
+var float maxDrawdownR = 0.0
+
+newDay = ta.change(time("D")) != 0
+if newDay
+    dailyWins := 0
+    dailyLosses := 0
+    dailyTradeCount := 0
+
+canTrade = dailyTradeCount < maxTradesPerDay
+
+if openDir == 0 and canTrade
+    if longSignal
+        slDist = close * slPct / 100
+        openEntry := close
+        openStop  := close - slDist
+        openRR1   := enableRR1 ? rr1 : na
+        openRR2   := enableRR2 ? rr2 : na
+        openRR3   := enableRR3 ? rr3 : na
+        openTP1   := enableRR1 ? close + slDist * rr1 : na
+        openTP2   := enableRR2 ? close + slDist * rr2 : na
+        openTP3   := enableRR3 ? close + slDist * rr3 : na
+        openDir   := 1
+        openBar   := bar_index
+        initialRiskDist := slDist
+        remainingFrac   := 1.0
+        tradeRealizedR  := 0.0
+        tp1Done := false
+        tp2Done := false
+        tp3Done := false
+        dailyTradeCount += 1
+        strategy.entry("Long", strategy.long)
+        if showTradeDraw
+            riskBox    := box.new(bar_index, math.max(openEntry, openStop), bar_index, math.min(openEntry, openStop), bgcolor = color.new(color.red, 85), border_color = color.new(color.red, 40))
+            rewardBox  := not na(openTP1) ? box.new(bar_index, math.max(openEntry, openTP1), bar_index, math.min(openEntry, openTP1), bgcolor = color.new(color.green, 85), border_color = color.new(color.green, 40)) : na
+            entryLine  := line.new(bar_index, openEntry, bar_index, openEntry, color = color.white, style = line.style_dashed)
+            tp2Line    := not na(openTP2) ? line.new(bar_index, openTP2, bar_index, openTP2, color = color.new(color.green, 30), style = line.style_dotted) : na
+            tp3Line    := not na(openTP3) ? line.new(bar_index, openTP3, bar_index, openTP3, color = color.new(color.green, 30), style = line.style_dotted) : na
+            entryLabel := label.new(bar_index, openStop, "BUY " + str.tostring(openEntry, format.mintick), style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+    else if shortSignal
+        slDist = close * slPct / 100
+        openEntry := close
+        openStop  := close + slDist
+        openRR1   := enableRR1 ? rr1 : na
+        openRR2   := enableRR2 ? rr2 : na
+        openRR3   := enableRR3 ? rr3 : na
+        openTP1   := enableRR1 ? close - slDist * rr1 : na
+        openTP2   := enableRR2 ? close - slDist * rr2 : na
+        openTP3   := enableRR3 ? close - slDist * rr3 : na
+        openDir   := -1
+        openBar   := bar_index
+        initialRiskDist := slDist
+        remainingFrac   := 1.0
+        tradeRealizedR  := 0.0
+        tp1Done := false
+        tp2Done := false
+        tp3Done := false
+        dailyTradeCount += 1
+        strategy.entry("Short", strategy.short)
+        if showTradeDraw
+            riskBox    := box.new(bar_index, math.max(openEntry, openStop), bar_index, math.min(openEntry, openStop), bgcolor = color.new(color.red, 85), border_color = color.new(color.red, 40))
+            rewardBox  := not na(openTP1) ? box.new(bar_index, math.max(openEntry, openTP1), bar_index, math.min(openEntry, openTP1), bgcolor = color.new(color.green, 85), border_color = color.new(color.green, 40)) : na
+            entryLine  := line.new(bar_index, openEntry, bar_index, openEntry, color = color.white, style = line.style_dashed)
+            tp2Line    := not na(openTP2) ? line.new(bar_index, openTP2, bar_index, openTP2, color = color.new(color.green, 30), style = line.style_dotted) : na
+            tp3Line    := not na(openTP3) ? line.new(bar_index, openTP3, bar_index, openTP3, color = color.new(color.green, 30), style = line.style_dotted) : na
+            entryLabel := label.new(bar_index, openStop, "SELL " + str.tostring(openEntry, format.mintick), style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+
+// extend the still-open trade's drawings forward as new bars form
+if openDir != 0 and showTradeDraw
+    if not na(riskBox)
+        box.set_right(riskBox, bar_index)
+    if not na(rewardBox)
+        box.set_right(rewardBox, bar_index)
+    if not na(entryLine)
+        line.set_x2(entryLine, bar_index)
+    if not na(tp2Line)
+        line.set_x2(tp2Line, bar_index)
+    if not na(tp3Line)
+        line.set_x2(tp3Line, bar_index)
+
+// evaluate the open trade from the bar after entry onward:
+// TP1 always takes a partial (unless it is the only enabled target, then it closes everything).
+// TP2 takes a small partial and moves the stop to breakeven ONLY when TP3 is also enabled;
+// otherwise TP2 closes whatever remains. TP3 (when reached) always closes whatever remains.
+if openDir == 1 and bar_index > openBar and remainingFrac > 0
+    stopHit = low <= openStop
+    if stopHit
+        stopRR = (openStop - openEntry) / initialRiskDist
+        tradeRealizedR += remainingFrac * stopRR
+        remainingFrac := 0.0
+        strategy.close("Long", comment = "SL")
+    else
+        if enableRR1 and not tp1Done and high >= openTP1
+            tp1Done := true
+            if enableRR2 or enableRR3
+                closeNow = math.min(tp1ClosePct / 100, remainingFrac)
+                tradeRealizedR += closeNow * openRR1
+                remainingFrac -= closeNow
+                strategy.close("Long", qty_percent = closeNow * 100, comment = "TP1")
+            else
+                tradeRealizedR += remainingFrac * openRR1
+                remainingFrac := 0.0
+                strategy.close("Long", comment = "TP1")
+        if enableRR2 and not tp2Done and remainingFrac > 0 and high >= openTP2
+            tp2Done := true
+            remainingBeforeTP2 = remainingFrac
+            if enableRR3
+                closeNow = math.min(tp2PartialPct / 100, remainingFrac)
+                tradeRealizedR += closeNow * openRR2
+                remainingFrac -= closeNow
+                strategy.close("Long", qty_percent = closeNow / remainingBeforeTP2 * 100, comment = "TP2")
+                if moveStopToBEOnTP2
+                    openStop := openEntry
+                    if showTradeDraw and not na(riskBox)
+                        box.set_top(riskBox, openEntry)
+                        box.set_bottom(riskBox, openEntry)
+            else
+                tradeRealizedR += remainingFrac * openRR2
+                remainingFrac := 0.0
+                strategy.close("Long", comment = "TP2")
+        if enableRR3 and not tp3Done and remainingFrac > 0 and high >= openTP3
+            tp3Done := true
+            tradeRealizedR += remainingFrac * openRR3
+            remainingFrac := 0.0
+            strategy.close("Long", comment = "TP3")
+    if remainingFrac <= 0.0
+        if tradeRealizedR > 0
+            totalWins += 1
+            dailyWins += 1
+        else
+            totalLosses += 1
+            dailyLosses += 1
+        cumR += tradeRealizedR
+        openDir := 0
+
+if openDir == -1 and bar_index > openBar and remainingFrac > 0
+    stopHit = high >= openStop
+    if stopHit
+        stopRR = (openEntry - openStop) / initialRiskDist
+        tradeRealizedR += remainingFrac * stopRR
+        remainingFrac := 0.0
+        strategy.close("Short", comment = "SL")
+    else
+        if enableRR1 and not tp1Done and low <= openTP1
+            tp1Done := true
+            if enableRR2 or enableRR3
+                closeNow = math.min(tp1ClosePct / 100, remainingFrac)
+                tradeRealizedR += closeNow * openRR1
+                remainingFrac -= closeNow
+                strategy.close("Short", qty_percent = closeNow * 100, comment = "TP1")
+            else
+                tradeRealizedR += remainingFrac * openRR1
+                remainingFrac := 0.0
+                strategy.close("Short", comment = "TP1")
+        if enableRR2 and not tp2Done and remainingFrac > 0 and low <= openTP2
+            tp2Done := true
+            remainingBeforeTP2 = remainingFrac
+            if enableRR3
+                closeNow = math.min(tp2PartialPct / 100, remainingFrac)
+                tradeRealizedR += closeNow * openRR2
+                remainingFrac -= closeNow
+                strategy.close("Short", qty_percent = closeNow / remainingBeforeTP2 * 100, comment = "TP2")
+                if moveStopToBEOnTP2
+                    openStop := openEntry
+                    if showTradeDraw and not na(riskBox)
+                        box.set_top(riskBox, openEntry)
+                        box.set_bottom(riskBox, openEntry)
+            else
+                tradeRealizedR += remainingFrac * openRR2
+                remainingFrac := 0.0
+                strategy.close("Short", comment = "TP2")
+        if enableRR3 and not tp3Done and remainingFrac > 0 and low <= openTP3
+            tp3Done := true
+            tradeRealizedR += remainingFrac * openRR3
+            remainingFrac := 0.0
+            strategy.close("Short", comment = "TP3")
+    if remainingFrac <= 0.0
+        if tradeRealizedR > 0
+            totalWins += 1
+            dailyWins += 1
+        else
+            totalLosses += 1
+            dailyLosses += 1
+        cumR += tradeRealizedR
+        openDir := 0
+
+peakR := math.max(peakR, cumR)
+maxDrawdownR := math.max(maxDrawdownR, peakR - cumR)
+
+// ---------------------------- Plots ----------------------------
+plotshape(regularBullSignal, title = "Regular Bullish Divergence", style = shape.triangleup, location = location.belowbar, color = color.new(color.lime, 0), size = size.small)
+plotshape(regularBearSignal, title = "Regular Bearish Divergence", style = shape.triangledown, location = location.abovebar, color = color.new(color.red, 0), size = size.small)
+
+plotshape(hiddenBullSignal, title = "Hidden Bullish Divergence", style = shape.circle, location = location.belowbar, color = color.new(color.aqua, 0), size = size.tiny)
+plotshape(hiddenBearSignal, title = "Hidden Bearish Divergence", style = shape.circle, location = location.abovebar, color = color.new(color.orange, 0), size = size.tiny)
+
+plotshape(keyLevelBullSignal, title = "Key Level Bullish Reversal", style = shape.diamond, location = location.belowbar, color = color.new(color.yellow, 0), size = size.normal)
+plotshape(keyLevelBearSignal, title = "Key Level Bearish Reversal", style = shape.diamond, location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.normal)
+
+plot(showTrendLines ? ema200HTF : na, title = "200 EMA (Analysis TF)", color = color.new(color.blue, 40))
+
+if showTrendLines and not na(bullX1)
+    line.new(bullX1, bullY1, bullX2, bullY2, xloc = xloc.bar_time, color = color.new(color.lime, 0), width = 1, extend = extend.right)
+if showTrendLines and not na(bearX1)
+    line.new(bearX1, bearY1, bearX2, bearY2, xloc = xloc.bar_time, color = color.new(color.red, 0), width = 1, extend = extend.right)
+
+if showKeyLevels and not na(lvlPHTime)
+    line.new(lvlPHTime, lvlPHPrice, time, lvlPHPrice, xloc = xloc.bar_time, color = color.new(color.red, 60), style = line.style_dashed, extend = extend.right)
+if showKeyLevels and not na(lvlPLTime)
+    line.new(lvlPLTime, lvlPLPrice, time, lvlPLPrice, xloc = xloc.bar_time, color = color.new(color.lime, 60), style = line.style_dashed, extend = extend.right)
+
+// ---------------------------- Performance dashboard (top-right) ----------------------------
+f_cell(tbl, col, row, txt, bg) =>
+    table.cell(tbl, col, row, txt, text_color = color.white, bgcolor = bg)
+
+var table dash = table.new(position.top_right, 2, 7, border_width = 1, border_color = color.gray)
+
+if showDashboard and barstate.islast
+    winRatePct = (totalWins + totalLosses) > 0 ? float(totalWins) / (totalWins + totalLosses) * 100 : 0.0
+    f_cell(dash, 0, 0, "Performance", color.new(color.blue, 30))
+    f_cell(dash, 1, 0, "", color.new(color.blue, 30))
+    f_cell(dash, 0, 1, "Win Rate", color.new(color.black, 60))
+    f_cell(dash, 1, 1, str.tostring(winRatePct, "#.##") + "%", color.new(color.black, 60))
+    f_cell(dash, 0, 2, "Wins", color.new(color.black, 60))
+    f_cell(dash, 1, 2, str.tostring(totalWins), color.new(color.black, 60))
+    f_cell(dash, 0, 3, "Losses", color.new(color.black, 60))
+    f_cell(dash, 1, 3, str.tostring(totalLosses), color.new(color.black, 60))
+    f_cell(dash, 0, 4, "Daily Win", color.new(color.black, 60))
+    f_cell(dash, 1, 4, str.tostring(dailyWins), color.new(color.black, 60))
+    f_cell(dash, 0, 5, "Daily Loss", color.new(color.black, 60))
+    f_cell(dash, 1, 5, str.tostring(dailyLosses), color.new(color.black, 60))
+    f_cell(dash, 0, 6, "Drawdown (R)", color.new(color.black, 60))
+    f_cell(dash, 1, 6, str.tostring(maxDrawdownR, "#.##"), color.new(color.black, 60))
+
+// ---------------------------- Alerts ----------------------------
+alertcondition(regularBullSignal, title = "Regular Bullish Divergence Break", message = "Regular bullish RSI divergence confirmed by trend line break")
+alertcondition(regularBearSignal, title = "Regular Bearish Divergence Break", message = "Regular bearish RSI divergence confirmed by trend line break")
+alertcondition(hiddenBullSignal, title = "Hidden Bullish Divergence Confirmed", message = "Hidden bullish RSI divergence confirmed by Stochastic cross above 200 EMA")
+alertcondition(hiddenBearSignal, title = "Hidden Bearish Divergence Confirmed", message = "Hidden bearish RSI divergence confirmed by Stochastic cross below 200 EMA")
+alertcondition(keyLevelBullSignal, title = "Key Level Bullish Reversal", message = "Bullish rejection + divergence trend line break at key support level")
+alertcondition(keyLevelBearSignal, title = "Key Level Bearish Reversal", message = "Bearish rejection + divergence trend line break at key resistance level")
+alertcondition(longSignal, title = "BUY Entry", message = "Combined BUY entry signal triggered")
+alertcondition(shortSignal, title = "SELL Entry", message = "Combined SELL entry signal triggered")
