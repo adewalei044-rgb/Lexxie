@@ -4,8 +4,8 @@
 VERSION = 'v6_1_0'
 
 strategy(
-     'Lexxie SAIYAN OCC',
-     shorttitle              = 'Lexxie OCC ' + VERSION,
+     'Lexxie SAIYAN OCC ' + VERSION,
+     shorttitle              = 'LexxieOCC',
      overlay                 = true,
      explicit_plot_zorder    = true,
      pyramiding               = 0,
@@ -379,14 +379,23 @@ f_extend_box_endpoint(current_demand_box)
 kc_bull_col = #00d9ff
 kc_bear_col = #ff0090
 
-k1 = plot(channelBal ? ta.ema(upperKC1, 50) : na, 'KC Upper 1', na, editable = false)
-k2 = plot(channelBal ? ta.ema(upperKC2, 50) : na, 'KC Upper 2', na, editable = false)
-k3 = plot(channelBal ? ta.ema(upperKC3, 50) : na, 'KC Upper 3', na, editable = false)
-k4 = plot(channelBal ? ta.ema(upperKC4, 50) : na, 'KC Upper 4', na, editable = false)
-k5 = plot(channelBal ? ta.ema(lowerKC4, 50) : na, 'KC Lower 4', na, editable = false)
-k6 = plot(channelBal ? ta.ema(lowerKC3, 50) : na, 'KC Lower 3', na, editable = false)
-k7 = plot(channelBal ? ta.ema(lowerKC2, 50) : na, 'KC Lower 2', na, editable = false)
-k8 = plot(channelBal ? ta.ema(lowerKC1, 50) : na, 'KC Lower 1', na, editable = false)
+kcEmaU1 = ta.ema(upperKC1, 50)
+kcEmaU2 = ta.ema(upperKC2, 50)
+kcEmaU3 = ta.ema(upperKC3, 50)
+kcEmaU4 = ta.ema(upperKC4, 50)
+kcEmaL4 = ta.ema(lowerKC4, 50)
+kcEmaL3 = ta.ema(lowerKC3, 50)
+kcEmaL2 = ta.ema(lowerKC2, 50)
+kcEmaL1 = ta.ema(lowerKC1, 50)
+
+k1 = plot(channelBal ? kcEmaU1 : na, 'KC Upper 1', na, editable = false)
+k2 = plot(channelBal ? kcEmaU2 : na, 'KC Upper 2', na, editable = false)
+k3 = plot(channelBal ? kcEmaU3 : na, 'KC Upper 3', na, editable = false)
+k4 = plot(channelBal ? kcEmaU4 : na, 'KC Upper 4', na, editable = false)
+k5 = plot(channelBal ? kcEmaL4 : na, 'KC Lower 4', na, editable = false)
+k6 = plot(channelBal ? kcEmaL3 : na, 'KC Lower 3', na, editable = false)
+k7 = plot(channelBal ? kcEmaL2 : na, 'KC Lower 2', na, editable = false)
+k8 = plot(channelBal ? kcEmaL1 : na, 'KC Lower 1', na, editable = false)
 fill(k1, k2, channelBal ? color.new(kc_bear_col, 40) : na, editable = false)
 fill(k2, k3, channelBal ? color.new(kc_bear_col, 65) : na, editable = false)
 fill(k3, k4, channelBal ? color.new(kc_bear_col, 90) : na, editable = false)
@@ -564,7 +573,7 @@ var sr_linesH = array.new_line(21, na)
 var sr_linesL = array.new_line(21, na)
 var sr_linesF = array.new_linefill(21, na)
 var sr_labels = array.new_label(21, na)
-if ph or pl
+if not na(ph) or not na(pl)
     for x = 0 to array.size(sr_levels) - 1
         array.set(sr_levels, x, na)
     highestph := prdlowest
@@ -580,8 +589,8 @@ if ph or pl
             if countpp > 40
                 break
             if array.get(aas, countpp)
-                upl = (ph[x] ? high[x + rb] : low[x + rb]) + cwidth
-                dnl = (ph[x] ? high[x + rb] : low[x + rb]) - cwidth
+                upl = (not na(ph[x]) ? high[x + rb] : low[x + rb]) + cwidth
+                dnl = (not na(ph[x]) ? high[x + rb] : low[x + rb]) - cwidth
                 u1 := countpp == 1 ? upl : u1
                 d1 := countpp == 1 ? dnl : d1
                 tmp = array.new_bool(41, true)
@@ -610,9 +619,9 @@ if ph or pl
                     for g = 0 to 40 by 1
                         if not array.get(tmp, g)
                             array.set(aas, g, false)
-                    if ph[x] and countpp < 21
+                    if not na(ph[x]) and countpp < 21
                         array.set(sr_levels, countpp, high[x + rb])
-                    if pl[x] and countpp < 21
+                    if not na(pl[x]) and countpp < 21
                         array.set(sr_levels, countpp, low[x + rb])
 // Plot
 var line highest_      = na, line.delete(highest_)
@@ -633,7 +642,7 @@ if enableSR
         lowest_fill2  := line.new(bar_index - 311, lowestpl - zonePerc , bar_index, lowestpl - zonePerc , xloc.bar_index, expandSR ? extend.both : extend.right, na)
         linefill.new(highest_fill1, highest_fill2, hi_col)
         linefill.new(lowest_fill1 , lowest_fill2 , lo_col)
-if ph or pl
+if not na(ph) or not na(pl)
     for x = 0 to array.size(sr_lines) - 1
         array.set(sr_levs, x, array.get(sr_levels, x))
 for x = 0 to array.size(sr_lines) - 1
@@ -660,8 +669,9 @@ llabel := enableSR ? label.new(bar_index + label_loc + math.round(math.sign(labe
 
 // Get components
 rsi       = ta.rsi(close, rsiLen)
-rsiOb     = rsi > rsiObLevel and rsi > ta.ema(rsi, 10)
-rsiOs     = rsi < rsiOsLevel and rsi < ta.ema(rsi, 10)
+rsiEma10  = ta.ema(rsi, 10)
+rsiOb     = rsi > rsiObLevel and rsi > rsiEma10
+rsiOs     = rsi < rsiOsLevel and rsi < rsiEma10
 bgcolor(useRsiZones and rsiOb ? color.new(color.red, 90)  : useRsiZones and rsiOs ? color.new(color.lime, 90) : na)
 
 dHigh     = useDailyLevels ? securityNoRep(syminfo.tickerid, "D", high [1]) : na
@@ -679,7 +689,7 @@ equal_tf(res) => str.tonumber(res) == f_chartTfInMinutes() and not timeframe.iss
 higher_tf(res) => str.tonumber(res) > f_chartTfInMinutes() or timeframe.isseconds
 too_small_tf(res) => (timeframe.isweekly and res=="1") or (timeframe.ismonthly and str.tonumber(res) < 10)
 securityNoRep1(sym, res, src) =>
-    bool bull_ = na
+    var bool bull_ = na
     bull_ := equal_tf(res) ? src : bull_
     bull_ := higher_tf(res) ? request.security(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on) : bull_
     bull_array = request.security_lower_tf(syminfo.tickerid, higher_tf(res) ? str.tostring(f_chartTfInMinutes()) + (timeframe.isseconds ? "S" : "") : too_small_tf(res) ? (timeframe.isweekly ? "3" : "10") : res, src)
