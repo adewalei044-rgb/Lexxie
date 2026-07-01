@@ -650,7 +650,7 @@ for x = 0 to array.size(sr_lines) - 1
     line.delete(array.get(sr_linesH, x))
     line.delete(array.get(sr_linesL, x))
     linefill.delete(array.get(sr_linesF, x))
-    if array.get(sr_levs, x) and enableSR
+    if not na(array.get(sr_levs, x)) and enableSR
         line_col = close >= array.get(sr_levs, x) ? colorSup : colorRes
         array.set(sr_lines, x, line.new(bar_index - 355, array.get(sr_levs, x), bar_index, array.get(sr_levs, x), xloc.bar_index, expandSR ? extend.both : extend.right, line_col, style, lineWidth))
         if useZones
@@ -659,7 +659,7 @@ for x = 0 to array.size(sr_lines) - 1
             array.set(sr_linesF, x, linefill.new(array.get(sr_linesH, x), array.get(sr_linesL, x), line_col))
 for x = 0 to array.size(sr_labels) - 1
     label.delete(array.get(sr_labels, x))
-    if array.get(sr_levs, x) and enableSR
+    if not na(array.get(sr_levs, x)) and enableSR
         lab_loc = close >= array.get(sr_levs, x) ? label.style_label_up : label.style_label_down
         lab_col = close >= array.get(sr_levs, x) ? colorSup             : colorRes
         array.set(sr_labels, x, label.new(bar_index + label_loc, array.get(sr_levs, x), str.tostring(math.round_to_mintick(array.get(sr_levs, x))), color=lab_col , textcolor=#000000, style=lab_loc))
@@ -689,14 +689,10 @@ equal_tf(res) => str.tonumber(res) == f_chartTfInMinutes() and not timeframe.iss
 higher_tf(res) => str.tonumber(res) > f_chartTfInMinutes() or timeframe.isseconds
 too_small_tf(res) => (timeframe.isweekly and res=="1") or (timeframe.ismonthly and str.tonumber(res) < 10)
 securityNoRep1(sym, res, src) =>
-    var bool bull_ = na
-    bull_ := equal_tf(res) ? src : bull_
-    bull_ := higher_tf(res) ? request.security(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on) : bull_
     bull_array = request.security_lower_tf(syminfo.tickerid, higher_tf(res) ? str.tostring(f_chartTfInMinutes()) + (timeframe.isseconds ? "S" : "") : too_small_tf(res) ? (timeframe.isweekly ? "3" : "10") : res, src)
-    if array.size(bull_array) > 1 and not equal_tf(res) and not higher_tf(res)
-        bull_ := array.pop(bull_array)
+    lowerTfBull = array.size(bull_array) > 1 and not equal_tf(res) and not higher_tf(res) ? array.pop(bull_array) : na
     array.clear(bull_array)
-    bull_
+    equal_tf(res) ? src : higher_tf(res) ? request.security(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on) : lowerTfBull
 
 //      MULTI-TIMEFRAME EMA(len) CONFLUENCE TABLE
 TF1Bull   = securityNoRep1(syminfo.tickerid, "1"   , emaBull)
