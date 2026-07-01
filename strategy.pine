@@ -738,8 +738,8 @@ f_tp(_condition, _conditionValue, _leTrigger, _seTrigger, _src, _lxLvlTP, _sxLvl
     var float _tpLine = 0.0
     _topLvl     = _src + (_src * (_lxLvlTP / 100))
     _botLvl     = _src - (_src * (_sxLvlTP / 100))
-    _tpLine    := _condition[1] !=  _conditionValue and _leTrigger ? _topLvl :
-                  _condition[1] != -_conditionValue and _seTrigger ? _botLvl :
+    _tpLine    := _condition[1] ==  0.0 and _leTrigger ? _topLvl :
+                  _condition[1] ==  0.0 and _seTrigger ? _botLvl :
                   nz(_tpLine[1])
     [_tpLine]
 
@@ -757,38 +757,39 @@ var float condDisplay = 0.0  // leads condition: set on longEDisplay, synced on 
 var float pendingTP1  = 0.0  // TP1 level during pending period (before leTrigger confirms)
 
 // Set display state immediately on real-time crossover, before confirmed trigger
-if longEDisplay  and condition[1] <=  0.0 and condDisplay <=  0.0
+// Only activate when flat (condition == 0) to avoid interfering with open trades
+if longEDisplay  and condition[1] ==  0.0 and condDisplay ==  0.0
     condDisplay :=  1.0
-if shortEDisplay and condition[1] >=  0.0 and condDisplay >=  0.0
+if shortEDisplay and condition[1] ==  0.0 and condDisplay ==  0.0
     condDisplay := -1.0
 
 //<entry & exit orders>
-entryLine   := leTrigger     and condition[1]   <=  0.0 ? close :
-               seTrigger     and condition[1]   >=  0.0 ? close :
-               longEDisplay  and condDisplay[1] <=  0.0 ? close :
-               shortEDisplay and condDisplay[1] >=  0.0 ? close :
+entryLine   := leTrigger     and condition[1]   ==  0.0 ? close :
+               seTrigger     and condition[1]   ==  0.0 ? close :
+               longEDisplay  and condDisplay[1] ==  0.0 ? close :
+               shortEDisplay and condDisplay[1] ==  0.0 ? close :
                nz(entryLine[1])
 //<SL>
 slTopLvl    = i_src + (i_src * (i_sxLvlSL / 100))
 slBotLvl    = i_src - (i_src * (i_lxLvlSL / 100))
-slLine     := condition[1]   <=  0.0 and leTrigger     ? slBotLvl :
-              condition[1]   >=  0.0 and seTrigger     ? slTopLvl :
-              condDisplay[1] <=  0.0 and longEDisplay  ? slBotLvl :
-              condDisplay[1] >=  0.0 and shortEDisplay ? slTopLvl :
+slLine     := condition[1]   ==  0.0 and leTrigger     ? slBotLvl :
+              condition[1]   ==  0.0 and seTrigger     ? slTopLvl :
+              condDisplay[1] ==  0.0 and longEDisplay  ? slBotLvl :
+              condDisplay[1] ==  0.0 and shortEDisplay ? slTopLvl :
               nz(slLine[1])
 slLong      = f_cross(low,  slLine, false)
 slShort     = f_cross(high, slLine, true )
 //<TP1>
 [tp1Line]    = f_tp(condition, 1.0,leTrigger, seTrigger, i_src, i_lxLvlTP1, i_sxLvlTP1)
-pendingTP1  := condDisplay[1] <=  0.0 and longEDisplay  ? i_src + i_src * (i_lxLvlTP1 / 100) :
-               condDisplay[1] >=  0.0 and shortEDisplay ? i_src - i_src * (i_sxLvlTP1 / 100) :
+pendingTP1  := condDisplay[1] ==  0.0 and longEDisplay  ? i_src + i_src * (i_lxLvlTP1 / 100) :
+               condDisplay[1] ==  0.0 and shortEDisplay ? i_src - i_src * (i_sxLvlTP1 / 100) :
                nz(pendingTP1[1])
 tp1Long      = f_cross(high, tp1Line, true )
 tp1Short     = f_cross(low,  tp1Line, false)
 
 switch
-    leTrigger and condition[1] <=  0.0 => condition :=  1.0
-    seTrigger and condition[1] >=  0.0 => condition := -1.0
+    leTrigger and condition[1] ==  0.0 => condition :=  1.0
+    seTrigger and condition[1] ==  0.0 => condition := -1.0
     tp1Long   and condition[1] ==  1.0 => condition :=  0.0
     tp1Short  and condition[1] == -1.0 => condition :=  0.0
     slLong    and condition[1] >=  1.0 => condition :=  0.0
