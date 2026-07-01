@@ -750,22 +750,39 @@ f_cross(_scr1, _scr2, _over)=>
 
 // ——————————— <calculations>
 //<set initial values>
-var float condition = 0.0
-var float slLine    = 0.0
-var float entryLine = 0.0
+var float condition   = 0.0
+var float slLine      = 0.0
+var float entryLine   = 0.0
+var float condDisplay = 0.0  // leads condition: set on longEDisplay, synced on exits
+var float pendingTP1  = 0.0  // TP1 level during pending period (before leTrigger confirms)
+
+// Set display state immediately on real-time crossover, before confirmed trigger
+if longEDisplay  and condition[1] <=  0.0 and condDisplay <=  0.0
+    condDisplay :=  1.0
+if shortEDisplay and condition[1] >=  0.0 and condDisplay >=  0.0
+    condDisplay := -1.0
 
 //<entry & exit orders>
-entryLine   := leTrigger and condition[1] <=  0.0 ? close :
-               seTrigger and condition[1] >=  0.0 ? close : nz(entryLine[1])
+entryLine   := leTrigger     and condition[1]   <=  0.0 ? close :
+               seTrigger     and condition[1]   >=  0.0 ? close :
+               longEDisplay  and condDisplay[1] <=  0.0 ? close :
+               shortEDisplay and condDisplay[1] >=  0.0 ? close :
+               nz(entryLine[1])
 //<SL>
 slTopLvl    = i_src + (i_src * (i_sxLvlSL / 100))
 slBotLvl    = i_src - (i_src * (i_lxLvlSL / 100))
-slLine     := condition[1] <=  0.0 and leTrigger ? slBotLvl :
-              condition[1] >=  0.0 and seTrigger ? slTopLvl : nz(slLine[1])
+slLine     := condition[1]   <=  0.0 and leTrigger     ? slBotLvl :
+              condition[1]   >=  0.0 and seTrigger     ? slTopLvl :
+              condDisplay[1] <=  0.0 and longEDisplay  ? slBotLvl :
+              condDisplay[1] >=  0.0 and shortEDisplay ? slTopLvl :
+              nz(slLine[1])
 slLong      = f_cross(low,  slLine, false)
 slShort     = f_cross(high, slLine, true )
 //<TP1>
 [tp1Line]    = f_tp(condition, 1.0,leTrigger, seTrigger, i_src, i_lxLvlTP1, i_sxLvlTP1)
+pendingTP1  := condDisplay[1] <=  0.0 and longEDisplay  ? i_src + i_src * (i_lxLvlTP1 / 100) :
+               condDisplay[1] >=  0.0 and shortEDisplay ? i_src - i_src * (i_sxLvlTP1 / 100) :
+               nz(pendingTP1[1])
 tp1Long      = f_cross(high, tp1Line, true )
 tp1Short     = f_cross(low,  tp1Line, false)
 
@@ -778,6 +795,12 @@ switch
     slShort   and condition[1] <= -1.0 => condition :=  0.0
     lxTrigger and condition[1] >=  1.0 => condition :=  0.0
     sxTrigger and condition[1] <= -1.0 => condition :=  0.0
+
+// Sync condDisplay with confirmed-entry and exit states
+if condition == 0.0
+    condDisplay := 0.0
+if (condition == 1.0 or condition == -1.0) and condDisplay == 0.0
+    condDisplay := condition
 
 longE        = leTrigger and condition[1] <=  0.0 and condition ==  1.0
 shortE       = seTrigger and condition[1] >=  0.0 and condition == -1.0
@@ -837,29 +860,32 @@ if shortX
       comment          = 'SX')
 
 // ——————————— <visuals>
+// During pending (condDisplay active, condition still 0): use pendingTP1 for display
+displayTP1   = condition != 0.0 ? tp1Line : condDisplay != 0.0 ? pendingTP1 : 0.0
+
 c_tp         = leTrigger or seTrigger ? na :
-               condition == 0.0       ? na : color.green
+               condDisplay == 0.0     ? na : color.green
 c_entry      = leTrigger or seTrigger ? na :
-               condition == 0.0       ? na : color.blue
+               condDisplay == 0.0     ? na : color.blue
 c_sl         = leTrigger or seTrigger ? na :
-               condition == 0.0       ? na : color.red
+               condDisplay == 0.0     ? na : color.red
 p_tp1Line    = plot (
-  i_tp1On and (condition ==  1.0 or
-  condition == -1.0) ? tp1Line : na,
+  i_tp1On and (condDisplay ==  1.0 or
+  condDisplay == -1.0) ? displayTP1 : na,
   title      = "TP Line 1",
   color      = c_tp,
   linewidth  = 1,
   style      = plot.style_linebr)
 p_entryLine  = plot (
-  (condition ==  1.0 or
-  condition == -1.0) ? entryLine : na,
+  (condDisplay ==  1.0 or
+  condDisplay == -1.0) ? entryLine : na,
   title      = "Entry Line",
   color      = c_entry,
   linewidth  = 1,
   style      = plot.style_linebr)
 p_slLine     = plot (
-  (condition ==  1.0 or
-  condition == -1.0) ? slLine : na,
+  (condDisplay ==  1.0 or
+  condDisplay == -1.0) ? slLine : na,
   title      = "SL Line",
   color      = c_sl,
   linewidth  = 1,
@@ -956,26 +982,11 @@ var label[] a_slLabel    = array.new_label(1)
 var label[] a_tp1label   = array.new_label(1)
 var label[] a_entryLabel = array.new_label(1)
 
-// Track the FIRST bar where the real-time display signal appears each cycle.
-// Stop overwriting once set — only the first firing per cycle matters because
-// that is the bar where the "Long"/"Short" plotshape label appears.
-// Reset both trackers after a confirmed entry so the next cycle starts fresh.
-var int longEDisplayBar  = 0
-var int shortEDisplayBar = 0
-if longEDisplay  and longEDisplayBar  == 0
-    longEDisplayBar  := bar_index
-if shortEDisplay and shortEDisplayBar == 0
-    shortEDisplayBar := bar_index
-
 newEntry     = longE or shortE
 entryIndex   = 1
-entryIndex  := longE  ? (longEDisplayBar  > 0 ? longEDisplayBar  : bar_index) :
-               shortE ? (shortEDisplayBar > 0 ? shortEDisplayBar : bar_index) :
+entryIndex  := condDisplay[1] <=  0.0 and condDisplay ==  1.0 ? bar_index :
+               condDisplay[1] >=  0.0 and condDisplay == -1.0 ? bar_index :
                nz(entryIndex[1])
-
-if longE or shortE
-    longEDisplayBar  := 0
-    shortEDisplayBar := 0
 lasTrade     = bar_index >= entryIndex
 l_right      = 10
 
@@ -1001,9 +1012,9 @@ line.delete(
   f_qDq(a_tp1Line,
   i_tp1On ? line.new(
    entryIndex,
-   tp1Line,
+   displayTP1,
    last_bar_index + l_right,
-   tp1Line,
+   displayTP1,
    style = line.style_solid,
    color = c_tp) : na))
 
@@ -1029,8 +1040,8 @@ label.delete(
   f_qDq(a_tp1label,
   i_tp1On ? label.new(
    last_bar_index + l_right,
-   tp1Line,
-   'TP1: ' + str.tostring(tp1Line, '##.###'),
+   displayTP1,
+   'TP1: ' + str.tostring(displayTP1, '##.###'),
    style = label.style_label_left,
    textcolor  = color.white,
    color = c_tp) : na))
