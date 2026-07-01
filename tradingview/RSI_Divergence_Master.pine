@@ -1,12 +1,13 @@
 //@version=6
-indicator("RSI Divergence Master - Regular, Hidden & Key Level", overlay=true, max_lines_count=200, max_labels_count=200, max_bars_back=500)
+indicator("RSI Divergence Master - Regular, Hidden & Key Level", overlay=true, max_lines_count=200, max_labels_count=200, max_boxes_count=200, max_bars_back=500)
 
 // =====================================================================================
-// Three-strategy RSI divergence framework:
+// Three-strategy RSI divergence framework with simulated single-position trade tracking:
 //   1) Regular divergence  -> reversal, confirmed by a swing trend line break
 //   2) Hidden divergence    -> trend continuation, filtered by 200 EMA, triggered by Stochastic cross
 //   3) Key level divergence -> divergence + rejection candle + trend line break at a major S/R level
-// Signal-only indicator: no strategy() backtest output, no log/print debugging, no text labels.
+// Only one simulated trade is tracked at a time. Stop loss %, daily trade limit and each
+// RR target are editable in Settings. Signal-only indicator: no strategy() backtest output.
 // =====================================================================================
 
 // ---------------------------- Inputs ----------------------------
@@ -35,16 +36,32 @@ lvlLookback = input.int(300, "Key Level Memory (bars)", group = grpLevel)
 lvlTolPct   = input.float(0.25, "Proximity to Level (%)", minval = 0.01, group = grpLevel)
 wickRatio   = input.float(1.5, "Min Wick/Body Ratio for Rejection Candle", minval = 0.5, group = grpLevel)
 
+grpTradeOpt = "Trade Options"
+tradeRegular  = input.bool(true, "Enable Regular Divergence Trades", group = grpTradeOpt)
+tradeHidden   = input.bool(true, "Enable Hidden Divergence Trades", group = grpTradeOpt)
+tradeKeyLevel = input.bool(true, "Enable Key Level Divergence Trades", group = grpTradeOpt)
+
+grpRisk = "Risk Management"
+slPct           = input.float(1.0, "Stop Loss Limit (%)", minval = 0.01, step = 0.05, group = grpRisk)
+maxTradesPerDay = input.int(3, "Max Trades Per Day", minval = 1, group = grpRisk)
+
+grpRR = "Risk:Reward Targets"
+enableRR1 = input.bool(true, "Enable TP1", inline = "rr1", group = grpRR)
+rr1       = input.float(1.0, "RR", inline = "rr1", minval = 0.1, group = grpRR)
+enableRR2 = input.bool(true, "Enable TP2", inline = "rr2", group = grpRR)
+rr2       = input.float(2.0, "RR", inline = "rr2", minval = 0.1, group = grpRR)
+enableRR3 = input.bool(true, "Enable TP3", inline = "rr3", group = grpRR)
+rr3       = input.float(3.0, "RR", inline = "rr3", minval = 0.1, group = grpRR)
+
 grpShow = "Display"
-showRegular    = input.bool(true, "Show Regular Divergence Signals", group = grpShow)
-showHidden     = input.bool(true, "Show Hidden Divergence Signals", group = grpShow)
-showKeyLevel   = input.bool(true, "Show Key Level Reversal Signals", group = grpShow)
 showTrendLines = input.bool(true, "Show Divergence Trend Lines", group = grpShow)
 showKeyLevels  = input.bool(true, "Show Key S/R Levels", group = grpShow)
+showTradeDraw  = input.bool(true, "Show Long/Short Entry Drawings", group = grpShow)
+showDashboard  = input.bool(true, "Show Performance Dashboard", group = grpShow)
 
 // ---------------------------- Core series ----------------------------
-rsi   = ta.rsi(rsiSrc, rsiLen)
-ema200 = ta.ema(close, emaLen)
+rsi      = ta.rsi(rsiSrc, rsiLen)
+ema200   = ta.ema(close, emaLen)
 stochRaw = ta.sma(ta.stoch(close, high, low, stochK), stochSmoothK)
 stochD_  = ta.sma(stochRaw, stochD)
 
@@ -63,10 +80,10 @@ var float lastPL    = na
 var int   lastPLBar = na
 var float lastPLRsi = na
 
-bullRegularAt  = false
-bearRegularAt  = false
-bullHiddenAt   = false
-bearHiddenAt   = false
+bullRegularAt = false
+bearRegularAt = false
+bullHiddenAt  = false
+bearHiddenAt  = false
 
 var float bullLineSlope = na
 var float bullLineAnchorPrice = na
@@ -77,9 +94,6 @@ var float bearLineSlope = na
 var float bearLineAnchorPrice = na
 var int   bearLineAnchorBar = na
 var bool  bearLineActive = false
-
-var line bullTrendLine = na
-var line bearTrendLine = na
 
 if not na(plPrice)
     curBar = bar_index - pvtRight
@@ -94,7 +108,7 @@ if not na(plPrice)
             bullLineAnchorBar := curBar
             bullLineActive := true
             if showTrendLines
-                bullTrendLine := line.new(lastPLBar, lastPL, curBar, curPrice, color = color.new(color.lime, 0), width = 1, extend = extend.right)
+                line.new(lastPLBar, lastPL, curBar, curPrice, color = color.new(color.lime, 0), width = 1, extend = extend.right)
     lastPL := curPrice
     lastPLBar := curBar
     lastPLRsi := curRsi
@@ -112,7 +126,7 @@ if not na(phPrice)
             bearLineAnchorBar := curBar
             bearLineActive := true
             if showTrendLines
-                bearTrendLine := line.new(lastPHBar, lastPH, curBar, curPrice, color = color.new(color.red, 0), width = 1, extend = extend.right)
+                line.new(lastPHBar, lastPH, curBar, curPrice, color = color.new(color.red, 0), width = 1, extend = extend.right)
     lastPH := curPrice
     lastPHBar := curBar
     lastPHRsi := curRsi
@@ -129,8 +143,8 @@ if bullBreakout
 if bearBreakout
     bearLineActive := false
 
-regularBullSignal = showRegular and bullBreakout
-regularBearSignal = showRegular and bearBreakout
+regularBullSignal = bullBreakout
+regularBearSignal = bearBreakout
 
 // ---------------------------- Hidden divergence -> EMA filter + Stochastic cross confirmation ----------------------------
 var int bullHiddenPendingBar = na
@@ -144,8 +158,8 @@ if bearHiddenAt and isDowntrend
 stochCrossUp   = ta.crossover(stochRaw, stochD_)
 stochCrossDown = ta.crossunder(stochRaw, stochD_)
 
-hiddenBullSignal = showHidden and not na(bullHiddenPendingBar) and (bar_index - bullHiddenPendingBar) <= stochMaxWait and stochCrossUp and isUptrend
-hiddenBearSignal = showHidden and not na(bearHiddenPendingBar) and (bar_index - bearHiddenPendingBar) <= stochMaxWait and stochCrossDown and isDowntrend
+hiddenBullSignal = not na(bullHiddenPendingBar) and (bar_index - bullHiddenPendingBar) <= stochMaxWait and stochCrossUp and isUptrend
+hiddenBearSignal = not na(bearHiddenPendingBar) and (bar_index - bearHiddenPendingBar) <= stochMaxWait and stochCrossDown and isDowntrend
 
 if hiddenBullSignal
     bullHiddenPendingBar := na
@@ -192,15 +206,146 @@ if array.size(supLevels) > 0
         if math.abs(close - lvl) / lvl * 100 <= lvlTolPct
             nearSupport := true
 
-bodyRange  = math.max(math.abs(close - open), syminfo.mintick)
-upperWick  = high - math.max(close, open)
-lowerWick  = math.min(close, open) - low
+bodyRange = math.max(math.abs(close - open), syminfo.mintick)
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
 
 bullishRejection = nearSupport and (lowerWick >= wickRatio * bodyRange)
 bearishRejection = nearResistance and (upperWick >= wickRatio * bodyRange)
 
-keyLevelBullSignal = showKeyLevel and bullishRejection and bullBreakout
-keyLevelBearSignal = showKeyLevel and bearishRejection and bearBreakout
+keyLevelBullSignal = bullishRejection and bullBreakout
+keyLevelBearSignal = bearishRejection and bearBreakout
+
+// ---------------------------- Combined BUY / SELL entry signals ----------------------------
+longSignal  = (tradeRegular and regularBullSignal) or (tradeHidden and hiddenBullSignal) or (tradeKeyLevel and keyLevelBullSignal)
+shortSignal = (tradeRegular and regularBearSignal) or (tradeHidden and hiddenBearSignal) or (tradeKeyLevel and keyLevelBearSignal)
+
+// ---------------------------- Simulated trade tracking ----------------------------
+var float openEntry = na
+var float openStop  = na
+var float openTP1   = na
+var float openTP2   = na
+var float openTP3   = na
+var float openRR1   = na
+var float openRR2   = na
+var float openRR3   = na
+var int   openDir   = 0
+var int   openBar   = na
+
+var box   riskBox    = na
+var box   rewardBox  = na
+var line  entryLine  = na
+var line  tp2Line    = na
+var line  tp3Line    = na
+var label entryLabel = na
+
+var int   totalWins      = 0
+var int   totalLosses    = 0
+var int   dailyWins      = 0
+var int   dailyLosses    = 0
+var int   dailyTradeCount = 0
+var float cumR         = 0.0
+var float peakR        = 0.0
+var float maxDrawdownR = 0.0
+
+newDay = ta.change(time("D")) != 0
+if newDay
+    dailyWins := 0
+    dailyLosses := 0
+    dailyTradeCount := 0
+
+canTrade = dailyTradeCount < maxTradesPerDay
+
+if openDir == 0 and canTrade
+    if longSignal
+        slDist = close * slPct / 100
+        openEntry := close
+        openStop  := close - slDist
+        openRR1   := enableRR1 ? rr1 : na
+        openRR2   := enableRR2 ? rr2 : na
+        openRR3   := enableRR3 ? rr3 : na
+        openTP1   := enableRR1 ? close + slDist * rr1 : na
+        openTP2   := enableRR2 ? close + slDist * rr2 : na
+        openTP3   := enableRR3 ? close + slDist * rr3 : na
+        openDir   := 1
+        openBar   := bar_index
+        dailyTradeCount += 1
+        if showTradeDraw
+            riskBox    := box.new(bar_index, math.max(openEntry, openStop), bar_index, math.min(openEntry, openStop), bgcolor = color.new(color.red, 85), border_color = color.new(color.red, 40))
+            rewardBox  := not na(openTP1) ? box.new(bar_index, math.max(openEntry, openTP1), bar_index, math.min(openEntry, openTP1), bgcolor = color.new(color.green, 85), border_color = color.new(color.green, 40)) : na
+            entryLine  := line.new(bar_index, openEntry, bar_index, openEntry, color = color.white, style = line.style_dashed)
+            tp2Line    := not na(openTP2) ? line.new(bar_index, openTP2, bar_index, openTP2, color = color.new(color.green, 30), style = line.style_dotted) : na
+            tp3Line    := not na(openTP3) ? line.new(bar_index, openTP3, bar_index, openTP3, color = color.new(color.green, 30), style = line.style_dotted) : na
+            entryLabel := label.new(bar_index, openStop, "BUY " + str.tostring(openEntry, format.mintick), style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+    else if shortSignal
+        slDist = close * slPct / 100
+        openEntry := close
+        openStop  := close + slDist
+        openRR1   := enableRR1 ? rr1 : na
+        openRR2   := enableRR2 ? rr2 : na
+        openRR3   := enableRR3 ? rr3 : na
+        openTP1   := enableRR1 ? close - slDist * rr1 : na
+        openTP2   := enableRR2 ? close - slDist * rr2 : na
+        openTP3   := enableRR3 ? close - slDist * rr3 : na
+        openDir   := -1
+        openBar   := bar_index
+        dailyTradeCount += 1
+        if showTradeDraw
+            riskBox    := box.new(bar_index, math.max(openEntry, openStop), bar_index, math.min(openEntry, openStop), bgcolor = color.new(color.red, 85), border_color = color.new(color.red, 40))
+            rewardBox  := not na(openTP1) ? box.new(bar_index, math.max(openEntry, openTP1), bar_index, math.min(openEntry, openTP1), bgcolor = color.new(color.green, 85), border_color = color.new(color.green, 40)) : na
+            entryLine  := line.new(bar_index, openEntry, bar_index, openEntry, color = color.white, style = line.style_dashed)
+            tp2Line    := not na(openTP2) ? line.new(bar_index, openTP2, bar_index, openTP2, color = color.new(color.green, 30), style = line.style_dotted) : na
+            tp3Line    := not na(openTP3) ? line.new(bar_index, openTP3, bar_index, openTP3, color = color.new(color.green, 30), style = line.style_dotted) : na
+            entryLabel := label.new(bar_index, openStop, "SELL " + str.tostring(openEntry, format.mintick), style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+
+// extend the still-open trade's drawings forward as new bars form
+if openDir != 0 and showTradeDraw
+    if not na(riskBox)
+        box.set_right(riskBox, bar_index)
+    if not na(rewardBox)
+        box.set_right(rewardBox, bar_index)
+    if not na(entryLine)
+        line.set_x2(entryLine, bar_index)
+    if not na(tp2Line)
+        line.set_x2(tp2Line, bar_index)
+    if not na(tp3Line)
+        line.set_x2(tp3Line, bar_index)
+
+// evaluate the open trade's outcome from the bar after entry onward
+if openDir == 1 and bar_index > openBar
+    firstTP = enableRR1 ? openTP1 : enableRR2 ? openTP2 : enableRR3 ? openTP3 : na
+    firstRR = enableRR1 ? openRR1 : enableRR2 ? openRR2 : enableRR3 ? openRR3 : na
+    hitStop = low <= openStop
+    hitTP   = not na(firstTP) and high >= firstTP
+    if hitStop
+        totalLosses += 1
+        dailyLosses += 1
+        cumR -= 1.0
+        openDir := 0
+    else if hitTP
+        totalWins += 1
+        dailyWins += 1
+        cumR += firstRR
+        openDir := 0
+
+if openDir == -1 and bar_index > openBar
+    firstTP = enableRR1 ? openTP1 : enableRR2 ? openTP2 : enableRR3 ? openTP3 : na
+    firstRR = enableRR1 ? openRR1 : enableRR2 ? openRR2 : enableRR3 ? openRR3 : na
+    hitStop = high >= openStop
+    hitTP   = not na(firstTP) and low <= firstTP
+    if hitStop
+        totalLosses += 1
+        dailyLosses += 1
+        cumR -= 1.0
+        openDir := 0
+    else if hitTP
+        totalWins += 1
+        dailyWins += 1
+        cumR += firstRR
+        openDir := 0
+
+peakR := math.max(peakR, cumR)
+maxDrawdownR := math.max(maxDrawdownR, peakR - cumR)
 
 // ---------------------------- Plots ----------------------------
 plotshape(regularBullSignal, title = "Regular Bullish Divergence", style = shape.triangleup, location = location.belowbar, color = color.new(color.lime, 0), size = size.small)
@@ -219,6 +364,29 @@ if showKeyLevels and not na(lvlPH)
 if showKeyLevels and not na(lvlPL)
     line.new(bar_index - lvlRight, lvlPL, bar_index, lvlPL, color = color.new(color.lime, 60), style = line.style_dashed, extend = extend.right)
 
+// ---------------------------- Performance dashboard (top-right) ----------------------------
+f_cell(tbl, col, row, txt, bg) =>
+    table.cell(tbl, col, row, txt, text_color = color.white, bgcolor = bg)
+
+var table dash = table.new(position.top_right, 2, 7, border_width = 1, border_color = color.gray)
+
+if showDashboard and barstate.islast
+    winRatePct = (totalWins + totalLosses) > 0 ? float(totalWins) / (totalWins + totalLosses) * 100 : 0.0
+    f_cell(dash, 0, 0, "Performance", color.new(color.blue, 30))
+    f_cell(dash, 1, 0, "", color.new(color.blue, 30))
+    f_cell(dash, 0, 1, "Win Rate", color.new(color.black, 60))
+    f_cell(dash, 1, 1, str.tostring(winRatePct, "#.##") + "%", color.new(color.black, 60))
+    f_cell(dash, 0, 2, "Wins", color.new(color.black, 60))
+    f_cell(dash, 1, 2, str.tostring(totalWins), color.new(color.black, 60))
+    f_cell(dash, 0, 3, "Losses", color.new(color.black, 60))
+    f_cell(dash, 1, 3, str.tostring(totalLosses), color.new(color.black, 60))
+    f_cell(dash, 0, 4, "Daily Win", color.new(color.black, 60))
+    f_cell(dash, 1, 4, str.tostring(dailyWins), color.new(color.black, 60))
+    f_cell(dash, 0, 5, "Daily Loss", color.new(color.black, 60))
+    f_cell(dash, 1, 5, str.tostring(dailyLosses), color.new(color.black, 60))
+    f_cell(dash, 0, 6, "Drawdown (R)", color.new(color.black, 60))
+    f_cell(dash, 1, 6, str.tostring(maxDrawdownR, "#.##"), color.new(color.black, 60))
+
 // ---------------------------- Alerts ----------------------------
 alertcondition(regularBullSignal, title = "Regular Bullish Divergence Break", message = "Regular bullish RSI divergence confirmed by trend line break")
 alertcondition(regularBearSignal, title = "Regular Bearish Divergence Break", message = "Regular bearish RSI divergence confirmed by trend line break")
@@ -226,3 +394,5 @@ alertcondition(hiddenBullSignal, title = "Hidden Bullish Divergence Confirmed", 
 alertcondition(hiddenBearSignal, title = "Hidden Bearish Divergence Confirmed", message = "Hidden bearish RSI divergence confirmed by Stochastic cross below 200 EMA")
 alertcondition(keyLevelBullSignal, title = "Key Level Bullish Reversal", message = "Bullish rejection + divergence trend line break at key support level")
 alertcondition(keyLevelBearSignal, title = "Key Level Bearish Reversal", message = "Bearish rejection + divergence trend line break at key resistance level")
+alertcondition(longSignal, title = "BUY Entry", message = "Combined BUY entry signal triggered")
+alertcondition(shortSignal, title = "SELL Entry", message = "Combined SELL entry signal triggered")
