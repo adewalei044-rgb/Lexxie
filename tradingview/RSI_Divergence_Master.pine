@@ -13,20 +13,27 @@ strategy("RSI Divergence Master - Regular, Hidden & Key Level", overlay = true,
 //   1) Regular divergence  -> reversal, confirmed by a swing trend line break
 //   2) Hidden divergence    -> trend continuation, filtered by 200 EMA, triggered by Stochastic cross
 //   3) Key level divergence -> divergence + rejection candle + trend line break at a major S/R level
+//
+// Signal generation (pivots, divergence, key levels) runs on a separately selectable
+// "Analysis Timeframe" via request.security(). Entries/exits always execute on this
+// chart's own timeframe - apply the script to a 1m-1H chart for execution, and pick the
+// Analysis Timeframe in Settings for whatever timeframe you want divergence judged on.
+//
 // Only one position is held at a time. Stop loss %, daily trade limit and each RR target
 // (with partial close sizing and the breakeven stop move) are editable in Settings.
 //
-// The bar-by-bar TP/SL waterfall below is the single source of truth for trade math (it
-// drives both the on-chart dashboard and the real strategy.entry()/strategy.close() calls),
-// so the Strategy Tester's trade list matches this script's own reasoning exactly. Exits are
-// submitted as market closes on the trigger bar (process_orders_on_close = true), so fills
-// land at that bar's close rather than the exact TP/SL price - a standard simplification.
+// Exits are submitted as market closes on the trigger (execution-timeframe) bar
+// (process_orders_on_close = true), so fills land at that bar's close rather than the
+// exact TP/SL price - a standard simplification.
 // =====================================================================================
 
 // ---------------------------- Inputs ----------------------------
 grpRSI = "RSI"
 rsiLen  = input.int(14, "RSI Length", group = grpRSI)
 rsiSrc  = input.source(close, "RSI Source", group = grpRSI)
+
+grpTF = "Analysis Timeframe"
+analysisTF = input.string("60", "Divergence / Key-Level Analysis Timeframe", options = ["1", "5", "10", "15", "60", "240", "D"], group = grpTF, tooltip = "1=1min, 5=5min, 10=10min, 15=15min, 60=1H, 240=4H, D=1Day. Pivots, divergence and key-level detection all run on this timeframe via request.security(). Entries/exits still execute on this chart's own timeframe (recommended 1m-1H) - the fill/stop/target checks use this chart's bars regardless of the Analysis Timeframe chosen here.")
 
 grpPivot = "Divergence Pivots"
 pvtLeft  = input.int(5, "Pivot Left Bars", minval = 1, group = grpPivot)
@@ -77,168 +84,215 @@ showKeyLevels  = input.bool(true, "Show Key S/R Levels", group = grpShow)
 showTradeDraw  = input.bool(true, "Show Long/Short Entry Drawings", group = grpShow)
 showDashboard  = input.bool(true, "Show Performance Dashboard", group = grpShow)
 
-// ---------------------------- Core series ----------------------------
-rsi      = ta.rsi(rsiSrc, rsiLen)
-ema200   = ta.ema(close, emaLen)
-stochRaw = ta.sma(ta.stoch(close, high, low, stochK), stochSmoothK)
-stochD_  = ta.sma(stochRaw, stochD)
+// ---------------------------- HTF analysis function ----------------------------
+// Everything below runs inside request.security() at analysisTF: all built-ins (close,
+// high, low, open, bar_index, time) resolve to that timeframe's own bars. No drawing
+// objects are created here (not permitted inside request.security) - only booleans/values
+// are returned; the caller draws trend lines / key levels using xloc.bar_time so they line
+// up correctly on the execution chart regardless of the analysis timeframe chosen.
+f_htf(rsiLenP, rsiSrcP, pvtLeftP, pvtRightP, maxBarsP, emaLenP, stochKP, stochSmoothKP, stochDP, stochMaxWaitP, lvlLeftP, lvlRightP, lvlLookbackP, lvlTolPctP, wickRatioP) =>
+    rsiV      = ta.rsi(rsiSrcP, rsiLenP)
+    ema200V   = ta.ema(close, emaLenP)
+    stochRawV = ta.sma(ta.stoch(close, high, low, stochKP), stochSmoothKP)
+    stochDV   = ta.sma(stochRawV, stochDP)
 
-isUptrend   = close > ema200
-isDowntrend = close < ema200
+    isUptrendV   = close > ema200V
+    isDowntrendV = close < ema200V
 
-// ---------------------------- Pivot detection (price-anchored) ----------------------------
-phPrice = ta.pivothigh(high, pvtLeft, pvtRight)
-plPrice = ta.pivotlow(low, pvtLeft, pvtRight)
+    phPriceV = ta.pivothigh(high, pvtLeftP, pvtRightP)
+    plPriceV = ta.pivotlow(low, pvtLeftP, pvtRightP)
 
-var float lastPH    = na
-var int   lastPHBar = na
-var float lastPHRsi = na
+    var float lastPH     = na
+    var int   lastPHBar  = na
+    var float lastPHRsi  = na
+    var int   lastPHTime = na
 
-var float lastPL    = na
-var int   lastPLBar = na
-var float lastPLRsi = na
+    var float lastPL     = na
+    var int   lastPLBar  = na
+    var float lastPLRsi  = na
+    var int   lastPLTime = na
 
-bullRegularAt = false
-bearRegularAt = false
-bullHiddenAt  = false
-bearHiddenAt  = false
+    bullRegularAtV = false
+    bearRegularAtV = false
+    bullHiddenAtV  = false
+    bearHiddenAtV  = false
 
-var float bullLineSlope = na
-var float bullLineAnchorPrice = na
-var int   bullLineAnchorBar = na
-var bool  bullLineActive = false
+    var float bullLineSlope = na
+    var float bullLineAnchorPrice = na
+    var int   bullLineAnchorBar = na
+    var bool  bullLineActive = false
 
-var float bearLineSlope = na
-var float bearLineAnchorPrice = na
-var int   bearLineAnchorBar = na
-var bool  bearLineActive = false
+    var float bearLineSlope = na
+    var float bearLineAnchorPrice = na
+    var int   bearLineAnchorBar = na
+    var bool  bearLineActive = false
 
-if not na(plPrice)
-    curBar = bar_index - pvtRight
-    curPrice = plPrice
-    curRsi = rsi[pvtRight]
-    if not na(lastPL) and (curBar - lastPLBar) <= maxBars
-        bullRegularAt := curPrice < lastPL and curRsi > lastPLRsi
-        bullHiddenAt  := curPrice > lastPL and curRsi < lastPLRsi
-        if bullRegularAt
-            bullLineSlope := (curPrice - lastPL) / (curBar - lastPLBar)
-            bullLineAnchorPrice := curPrice
-            bullLineAnchorBar := curBar
-            bullLineActive := true
-            if showTrendLines
-                line.new(lastPLBar, lastPL, curBar, curPrice, color = color.new(color.lime, 0), width = 1, extend = extend.right)
-    lastPL := curPrice
-    lastPLBar := curBar
-    lastPLRsi := curRsi
+    int   bullNewX1 = na
+    float bullNewY1 = na
+    int   bullNewX2 = na
+    float bullNewY2 = na
+    int   bearNewX1 = na
+    float bearNewY1 = na
+    int   bearNewX2 = na
+    float bearNewY2 = na
 
-if not na(phPrice)
-    curBar = bar_index - pvtRight
-    curPrice = phPrice
-    curRsi = rsi[pvtRight]
-    if not na(lastPH) and (curBar - lastPHBar) <= maxBars
-        bearRegularAt := curPrice > lastPH and curRsi < lastPHRsi
-        bearHiddenAt  := curPrice < lastPH and curRsi > lastPHRsi
-        if bearRegularAt
-            bearLineSlope := (curPrice - lastPH) / (curBar - lastPHBar)
-            bearLineAnchorPrice := curPrice
-            bearLineAnchorBar := curBar
-            bearLineActive := true
-            if showTrendLines
-                line.new(lastPHBar, lastPH, curBar, curPrice, color = color.new(color.red, 0), width = 1, extend = extend.right)
-    lastPH := curPrice
-    lastPHBar := curBar
-    lastPHRsi := curRsi
+    if not na(plPriceV)
+        curBar   = bar_index - pvtRightP
+        curPrice = plPriceV
+        curRsi   = rsiV[pvtRightP]
+        curTime  = time[pvtRightP]
+        if not na(lastPL) and (curBar - lastPLBar) <= maxBarsP
+            bullRegularAtV := curPrice < lastPL and curRsi > lastPLRsi
+            bullHiddenAtV  := curPrice > lastPL and curRsi < lastPLRsi
+            if bullRegularAtV
+                bullLineSlope := (curPrice - lastPL) / (curBar - lastPLBar)
+                bullLineAnchorPrice := curPrice
+                bullLineAnchorBar := curBar
+                bullLineActive := true
+                bullNewX1 := lastPLTime
+                bullNewY1 := lastPL
+                bullNewX2 := curTime
+                bullNewY2 := curPrice
+        lastPL := curPrice
+        lastPLBar := curBar
+        lastPLRsi := curRsi
+        lastPLTime := curTime
 
-// ---------------------------- Regular divergence -> trend line break confirmation ----------------------------
-bullLineValue = bullLineActive ? bullLineAnchorPrice + bullLineSlope * (bar_index - bullLineAnchorBar) : na
-bearLineValue = bearLineActive ? bearLineAnchorPrice + bearLineSlope * (bar_index - bearLineAnchorBar) : na
+    if not na(phPriceV)
+        curBar   = bar_index - pvtRightP
+        curPrice = phPriceV
+        curRsi   = rsiV[pvtRightP]
+        curTime  = time[pvtRightP]
+        if not na(lastPH) and (curBar - lastPHBar) <= maxBarsP
+            bearRegularAtV := curPrice > lastPH and curRsi < lastPHRsi
+            bearHiddenAtV  := curPrice < lastPH and curRsi > lastPHRsi
+            if bearRegularAtV
+                bearLineSlope := (curPrice - lastPH) / (curBar - lastPHBar)
+                bearLineAnchorPrice := curPrice
+                bearLineAnchorBar := curBar
+                bearLineActive := true
+                bearNewX1 := lastPHTime
+                bearNewY1 := lastPH
+                bearNewX2 := curTime
+                bearNewY2 := curPrice
+        lastPH := curPrice
+        lastPHBar := curBar
+        lastPHRsi := curRsi
+        lastPHTime := curTime
 
-bullBreakout = bullLineActive and ta.crossunder(close, bullLineValue)
-bearBreakout = bearLineActive and ta.crossover(close, bearLineValue)
+    bullLineValue = bullLineActive ? bullLineAnchorPrice + bullLineSlope * (bar_index - bullLineAnchorBar) : na
+    bearLineValue = bearLineActive ? bearLineAnchorPrice + bearLineSlope * (bar_index - bearLineAnchorBar) : na
 
-if bullBreakout
-    bullLineActive := false
-if bearBreakout
-    bearLineActive := false
+    bullBreakoutV = bullLineActive and ta.crossunder(close, bullLineValue)
+    bearBreakoutV = bearLineActive and ta.crossover(close, bearLineValue)
 
-regularBullSignal = bullBreakout
-regularBearSignal = bearBreakout
+    if bullBreakoutV
+        bullLineActive := false
+    if bearBreakoutV
+        bearLineActive := false
 
-// ---------------------------- Hidden divergence -> EMA filter + Stochastic cross confirmation ----------------------------
-var int bullHiddenPendingBar = na
-var int bearHiddenPendingBar = na
+    regularBullSignalV = bullBreakoutV
+    regularBearSignalV = bearBreakoutV
 
-if bullHiddenAt and isUptrend
-    bullHiddenPendingBar := bar_index
-if bearHiddenAt and isDowntrend
-    bearHiddenPendingBar := bar_index
+    var int bullHiddenPendingBar = na
+    var int bearHiddenPendingBar = na
 
-stochCrossUp   = ta.crossover(stochRaw, stochD_)
-stochCrossDown = ta.crossunder(stochRaw, stochD_)
+    if bullHiddenAtV and isUptrendV
+        bullHiddenPendingBar := bar_index
+    if bearHiddenAtV and isDowntrendV
+        bearHiddenPendingBar := bar_index
 
-hiddenBullSignal = not na(bullHiddenPendingBar) and (bar_index - bullHiddenPendingBar) <= stochMaxWait and stochCrossUp and isUptrend
-hiddenBearSignal = not na(bearHiddenPendingBar) and (bar_index - bearHiddenPendingBar) <= stochMaxWait and stochCrossDown and isDowntrend
+    stochCrossUpV   = ta.crossover(stochRawV, stochDV)
+    stochCrossDownV = ta.crossunder(stochRawV, stochDV)
 
-if hiddenBullSignal
-    bullHiddenPendingBar := na
-if hiddenBearSignal
-    bearHiddenPendingBar := na
+    hiddenBullSignalV = not na(bullHiddenPendingBar) and (bar_index - bullHiddenPendingBar) <= stochMaxWaitP and stochCrossUpV and isUptrendV
+    hiddenBearSignalV = not na(bearHiddenPendingBar) and (bar_index - bearHiddenPendingBar) <= stochMaxWaitP and stochCrossDownV and isDowntrendV
 
-// ---------------------------- Key level detection ----------------------------
-lvlPH = ta.pivothigh(high, lvlLeft, lvlRight)
-lvlPL = ta.pivotlow(low, lvlLeft, lvlRight)
+    if hiddenBullSignalV
+        bullHiddenPendingBar := na
+    if hiddenBearSignalV
+        bearHiddenPendingBar := na
 
-var array<float> resLevels = array.new_float()
-var array<int>   resBars   = array.new_int()
-var array<float> supLevels = array.new_float()
-var array<int>   supBars   = array.new_int()
+    lvlPHV = ta.pivothigh(high, lvlLeftP, lvlRightP)
+    lvlPLV = ta.pivotlow(low, lvlLeftP, lvlRightP)
 
-if not na(lvlPH)
-    array.push(resLevels, lvlPH)
-    array.push(resBars, bar_index - lvlRight)
-if not na(lvlPL)
-    array.push(supLevels, lvlPL)
-    array.push(supBars, bar_index - lvlRight)
+    var array<float> resLevels = array.new_float()
+    var array<int>   resBars   = array.new_int()
+    var array<float> supLevels = array.new_float()
+    var array<int>   supBars   = array.new_int()
 
-if array.size(resBars) > 0
-    for i = array.size(resBars) - 1 to 0
-        if bar_index - array.get(resBars, i) > lvlLookback
-            array.remove(resBars, i)
-            array.remove(resLevels, i)
-if array.size(supBars) > 0
-    for i = array.size(supBars) - 1 to 0
-        if bar_index - array.get(supBars, i) > lvlLookback
-            array.remove(supBars, i)
-            array.remove(supLevels, i)
+    int lvlPHNewTime = na
+    int lvlPLNewTime = na
 
-nearResistance = false
-nearSupport = false
-if array.size(resLevels) > 0
-    for i = 0 to array.size(resLevels) - 1
-        lvl = array.get(resLevels, i)
-        if math.abs(close - lvl) / lvl * 100 <= lvlTolPct
-            nearResistance := true
-if array.size(supLevels) > 0
-    for i = 0 to array.size(supLevels) - 1
-        lvl = array.get(supLevels, i)
-        if math.abs(close - lvl) / lvl * 100 <= lvlTolPct
-            nearSupport := true
+    if not na(lvlPHV)
+        array.push(resLevels, lvlPHV)
+        array.push(resBars, bar_index - lvlRightP)
+        lvlPHNewTime := time[lvlRightP]
+    if not na(lvlPLV)
+        array.push(supLevels, lvlPLV)
+        array.push(supBars, bar_index - lvlRightP)
+        lvlPLNewTime := time[lvlRightP]
 
-bodyRange = math.max(math.abs(close - open), syminfo.mintick)
-upperWick = high - math.max(close, open)
-lowerWick = math.min(close, open) - low
+    if array.size(resBars) > 0
+        for i = array.size(resBars) - 1 to 0
+            if bar_index - array.get(resBars, i) > lvlLookbackP
+                array.remove(resBars, i)
+                array.remove(resLevels, i)
+    if array.size(supBars) > 0
+        for i = array.size(supBars) - 1 to 0
+            if bar_index - array.get(supBars, i) > lvlLookbackP
+                array.remove(supBars, i)
+                array.remove(supLevels, i)
 
-bullishRejection = nearSupport and (lowerWick >= wickRatio * bodyRange)
-bearishRejection = nearResistance and (upperWick >= wickRatio * bodyRange)
+    nearResistanceV = false
+    nearSupportV = false
+    if array.size(resLevels) > 0
+        for i = 0 to array.size(resLevels) - 1
+            lvl = array.get(resLevels, i)
+            if math.abs(close - lvl) / lvl * 100 <= lvlTolPctP
+                nearResistanceV := true
+    if array.size(supLevels) > 0
+        for i = 0 to array.size(supLevels) - 1
+            lvl = array.get(supLevels, i)
+            if math.abs(close - lvl) / lvl * 100 <= lvlTolPctP
+                nearSupportV := true
 
-keyLevelBullSignal = bullishRejection and bullBreakout
-keyLevelBearSignal = bearishRejection and bearBreakout
+    bodyRangeV = math.max(math.abs(close - open), syminfo.mintick)
+    upperWickV = high - math.max(close, open)
+    lowerWickV = math.min(close, open) - low
+
+    bullishRejectionV = nearSupportV and (lowerWickV >= wickRatioP * bodyRangeV)
+    bearishRejectionV = nearResistanceV and (upperWickV >= wickRatioP * bodyRangeV)
+
+    keyLevelBullSignalV = bullishRejectionV and bullBreakoutV
+    keyLevelBearSignalV = bearishRejectionV and bearBreakoutV
+
+    [regularBullSignalV, regularBearSignalV, hiddenBullSignalV, hiddenBearSignalV, keyLevelBullSignalV, keyLevelBearSignalV,
+     ema200V,
+     bullNewX1, bullNewY1, bullNewX2, bullNewY2,
+     bearNewX1, bearNewY1, bearNewX2, bearNewY2,
+     lvlPHV, lvlPHNewTime, lvlPLV, lvlPLNewTime]
+
+[regularBullSignalHTF, regularBearSignalHTF, hiddenBullSignalHTF, hiddenBearSignalHTF, keyLevelBullSignalHTF, keyLevelBearSignalHTF,
+ ema200HTF,
+ bullX1, bullY1, bullX2, bullY2,
+ bearX1, bearY1, bearX2, bearY2,
+ lvlPHPrice, lvlPHTime, lvlPLPrice, lvlPLTime] =
+     request.security(syminfo.tickerid, analysisTF, f_htf(rsiLen, rsiSrc, pvtLeft, pvtRight, maxBars, emaLen, stochK, stochSmoothK, stochD, stochMaxWait, lvlLeft, lvlRight, lvlLookback, lvlTolPct, wickRatio))
+
+// one clean edge-triggered pulse per analysis-timeframe event, on the execution chart
+regularBullSignal  = regularBullSignalHTF and not regularBullSignalHTF[1]
+regularBearSignal  = regularBearSignalHTF and not regularBearSignalHTF[1]
+hiddenBullSignal   = hiddenBullSignalHTF and not hiddenBullSignalHTF[1]
+hiddenBearSignal   = hiddenBearSignalHTF and not hiddenBearSignalHTF[1]
+keyLevelBullSignal = keyLevelBullSignalHTF and not keyLevelBullSignalHTF[1]
+keyLevelBearSignal = keyLevelBearSignalHTF and not keyLevelBearSignalHTF[1]
 
 // ---------------------------- Combined BUY / SELL entry signals ----------------------------
 longSignal  = (tradeRegular and regularBullSignal) or (tradeHidden and hiddenBullSignal) or (tradeKeyLevel and keyLevelBullSignal)
 shortSignal = (tradeRegular and regularBearSignal) or (tradeHidden and hiddenBearSignal) or (tradeKeyLevel and keyLevelBearSignal)
 
-// ---------------------------- Simulated trade tracking ----------------------------
+// ---------------------------- Simulated trade tracking (executes on this chart's own bars) ----------------------------
 var float openEntry = na
 var float openStop  = na
 var float openTP1   = na
@@ -469,12 +523,17 @@ plotshape(hiddenBearSignal, title = "Hidden Bearish Divergence", style = shape.c
 plotshape(keyLevelBullSignal, title = "Key Level Bullish Reversal", style = shape.diamond, location = location.belowbar, color = color.new(color.yellow, 0), size = size.normal)
 plotshape(keyLevelBearSignal, title = "Key Level Bearish Reversal", style = shape.diamond, location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.normal)
 
-plot(showTrendLines ? ema200 : na, title = "200 EMA", color = color.new(color.blue, 40))
+plot(showTrendLines ? ema200HTF : na, title = "200 EMA (Analysis TF)", color = color.new(color.blue, 40))
 
-if showKeyLevels and not na(lvlPH)
-    line.new(bar_index - lvlRight, lvlPH, bar_index, lvlPH, color = color.new(color.red, 60), style = line.style_dashed, extend = extend.right)
-if showKeyLevels and not na(lvlPL)
-    line.new(bar_index - lvlRight, lvlPL, bar_index, lvlPL, color = color.new(color.lime, 60), style = line.style_dashed, extend = extend.right)
+if showTrendLines and not na(bullX1)
+    line.new(bullX1, bullY1, bullX2, bullY2, xloc = xloc.bar_time, color = color.new(color.lime, 0), width = 1, extend = extend.right)
+if showTrendLines and not na(bearX1)
+    line.new(bearX1, bearY1, bearX2, bearY2, xloc = xloc.bar_time, color = color.new(color.red, 0), width = 1, extend = extend.right)
+
+if showKeyLevels and not na(lvlPHTime)
+    line.new(lvlPHTime, lvlPHPrice, time, lvlPHPrice, xloc = xloc.bar_time, color = color.new(color.red, 60), style = line.style_dashed, extend = extend.right)
+if showKeyLevels and not na(lvlPLTime)
+    line.new(lvlPLTime, lvlPLPrice, time, lvlPLPrice, xloc = xloc.bar_time, color = color.new(color.lime, 60), style = line.style_dashed, extend = extend.right)
 
 // ---------------------------- Performance dashboard (top-right) ----------------------------
 f_cell(tbl, col, row, txt, bg) =>
