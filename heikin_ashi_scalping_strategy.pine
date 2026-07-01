@@ -1,0 +1,168 @@
+//@version=6
+strategy("Heikin-Ashi Scalping Strategy", overlay=true, initial_capital=10000,
+     currency=currency.USD, default_qty_type=strategy.fixed, default_qty_value=1,
+     pyramiding=0, calc_on_order_fills=false, process_orders_on_close=false)
+
+// ---------------------------------------------------------------------------
+// Heikin-Ashi values are calculated manually (not by switching the chart to
+// "Heikin-Ashi" type). TradingView strategies that run directly on an HA
+// chart fill orders against synthetic HA prices instead of real ones, which
+// distorts backtests and can repaint. Computing HA here keeps every order
+// filled against real chart prices while all signal logic still uses HA.
+// ---------------------------------------------------------------------------
+
+// ============================= 1. TREND & SESSION SETTINGS =============================
+emaLength         = input.int(100, "EMA Length", minval=1, group="1. Trend & Session Settings")
+trendConfirmBars  = input.int(3, "Trend Confirmation Bars (all HA closes same side of EMA)", minval=1, group="1. Trend & Session Settings")
+useSessionFilter  = input.bool(true, "Restrict Trading to Session Window", group="1. Trend & Session Settings")
+sessionWindow     = input.session("1000-1200", "Trading Session (Exchange Time)", group="1. Trend & Session Settings")
+
+// ============================= 2. PULLBACK & ENTRY (DOJI) SETTINGS =============================
+pullbackBars      = input.int(2, "Minimum Clean Pullback Candles", minval=1, group="2. Pullback & Entry Settings")
+dojiBodyRatio     = input.float(0.3, "Max Doji Body % of Candle Range", minval=0.05, maxval=1.0, step=0.05, group="2. Pullback & Entry Settings")
+volLookback       = input.int(2, "High-Volume Lookback Candles", minval=1, maxval=5, group="2. Pullback & Entry Settings")
+
+// ============================= 3. RISK MANAGEMENT =============================
+slBufferTicks     = input.float(0, "Stop Loss Buffer Beyond Doji Wick (ticks)", minval=0, group="3. Risk Management")
+maxStopLossPoints = input.float(1000, "Stop Loss Limit (max risk in points, skip trade if exceeded)", minval=0, group="3. Risk Management")
+useFixedRR        = input.bool(true, "Use Fixed 1:1 Risk:Reward", group="3. Risk Management")
+customRR          = input.float(1.0, "Custom Risk:Reward Ratio (used when 1:1 box is unchecked)", minval=0.1, step=0.1, group="3. Risk Management")
+maxTradesPerDay   = input.int(2, "Max Trades Per Day", minval=1, group="3. Risk Management")
+
+// ============================= DISPLAY =============================
+showLabels        = input.bool(true, "Show Buy/Sell Entry Labels")
+showTable         = input.bool(true, "Show Stats Table")
+showHaOverlay     = input.bool(true, "Show Heikin-Ashi Overlay Candles")
+
+// ============================= HEIKIN-ASHI CALCULATION =============================
+haClose = (open + high + low + close) / 4
+var float haOpen = na
+haOpen := na(haOpen[1]) ? (open + close) / 2 : (haOpen[1] + haClose[1]) / 2
+haHigh = math.max(high, math.max(haOpen, haClose))
+haLow  = math.min(low, math.min(haOpen, haClose))
+
+emaVal = ta.ema(haClose, emaLength)
+
+if showHaOverlay
+    plotcandle(haOpen, haHigh, haLow, haClose, title="Heikin-Ashi",
+         color=haClose >= haOpen ? color.new(color.lime, 0) : color.new(color.red, 0),
+         wickcolor=color.gray, bordercolor=haClose >= haOpen ? color.new(color.lime, 0) : color.new(color.red, 0))
+plot(emaVal, title="100 EMA (HA)", color=color.white, linewidth=2)
+
+// ============================= TREND FILTER =============================
+allAbove = true
+allBelow = true
+for i = 0 to trendConfirmBars - 1
+    if haClose[i] <= emaVal[i]
+        allAbove := false
+    if haClose[i] >= emaVal[i]
+        allBelow := false
+
+trend = allAbove ? 1 : allBelow ? -1 : 0
+
+// ============================= PULLBACK CANDLES =============================
+tol = syminfo.mintick * 0.51
+flatBottomBull = haClose > haOpen and math.abs(haLow - haOpen) < tol
+flatTopBear    = haClose < haOpen and math.abs(haHigh - haOpen) < tol
+
+pullbackUpOK = true
+pullbackDownOK = true
+for i = 1 to pullbackBars
+    if not flatBottomBull[i]
+        pullbackUpOK := false
+    if not flatTopBear[i]
+        pullbackDownOK := false
+
+// ============================= DOJI (ENTRY CANDLE) =============================
+bodySize   = math.abs(haClose - haOpen)
+totalRange = haHigh - haLow
+isDojiShape = totalRange > 0 and bodySize <= totalRange * dojiBodyRatio and
+     haHigh > math.max(haOpen, haClose) and haLow < math.min(haOpen, haClose)
+
+isHighVolume = false
+for i = 1 to volLookback
+    if totalRange > (haHigh[i] - haLow[i])
+        isHighVolume := true
+
+// ============================= SESSION & DAILY TRADE LIMIT =============================
+inSession = not useSessionFilter or not na(time(timeframe.period, sessionWindow))
+
+var int tradesToday = 0
+if ta.change(time("D"))
+    tradesToday := 0
+canTrade = tradesToday < maxTradesPerDay
+
+// ============================= SETUP CONDITIONS =============================
+sellSetup = trend == -1 and pullbackUpOK and isDojiShape and isHighVolume
+buySetup  = trend ==  1 and pullbackDownOK and isDojiShape and isHighVolume
+
+rr = useFixedRR ? 1.0 : customRR
+
+// ============================= ENTRIES =============================
+if buySetup and inSession and canTrade and strategy.position_size == 0
+    slPrice = haLow - slBufferTicks * syminfo.mintick
+    riskPts = close - slPrice
+    if riskPts > 0 and riskPts <= maxStopLossPoints
+        tpPrice = close + riskPts * rr
+        strategy.entry("Buy", strategy.long)
+        strategy.exit("Buy Exit", from_entry="Buy", stop=slPrice, limit=tpPrice)
+        tradesToday := tradesToday + 1
+        if showLabels
+            label.new(bar_index, low, "BUY", style=label.style_label_up,
+                 color=color.new(color.green, 0), textcolor=color.white, yloc=yloc.belowbar, size=size.small)
+
+if sellSetup and inSession and canTrade and strategy.position_size == 0
+    slPrice = haHigh + slBufferTicks * syminfo.mintick
+    riskPts = slPrice - close
+    if riskPts > 0 and riskPts <= maxStopLossPoints
+        tpPrice = close - riskPts * rr
+        strategy.entry("Sell", strategy.short)
+        strategy.exit("Sell Exit", from_entry="Sell", stop=slPrice, limit=tpPrice)
+        tradesToday := tradesToday + 1
+        if showLabels
+            label.new(bar_index, high, "SELL", style=label.style_label_down,
+                 color=color.new(color.red, 0), textcolor=color.white, yloc=yloc.abovebar, size=size.small)
+
+// ============================= STATS TABLE =============================
+var int dailyWins   = 0
+var int dailyLosses = 0
+var int lastClosedCount = 0
+var float equityPeak = strategy.initial_capital
+var float maxDrawdownPct = 0.0
+
+if ta.change(time("D"))
+    dailyWins := 0
+    dailyLosses := 0
+
+if strategy.closedtrades > lastClosedCount
+    for i = lastClosedCount to strategy.closedtrades - 1
+        if strategy.closedtrades.profit(i) > 0
+            dailyWins := dailyWins + 1
+        else
+            dailyLosses := dailyLosses + 1
+    lastClosedCount := strategy.closedtrades
+
+equityPeak := math.max(equityPeak, strategy.equity)
+ddPct = equityPeak > 0 ? (equityPeak - strategy.equity) / equityPeak * 100 : 0.0
+maxDrawdownPct := math.max(maxDrawdownPct, ddPct)
+
+wins   = strategy.wintrades
+losses = strategy.losstrades
+total  = strategy.closedtrades
+winRate = total > 0 ? wins / total * 100 : 0.0
+
+var table statsTable = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 20), border_width=1, border_color=color.gray)
+
+if showTable and barstate.islast
+    table.cell(statsTable, 0, 0, "Win Rate", text_color=color.white, bgcolor=color.new(color.blue, 40))
+    table.cell(statsTable, 1, 0, str.tostring(winRate, "#.##") + "%", text_color=color.white, bgcolor=color.new(color.blue, 40))
+    table.cell(statsTable, 0, 1, "Wins / Losses", text_color=color.white)
+    table.cell(statsTable, 1, 1, str.tostring(wins) + " / " + str.tostring(losses), text_color=color.white)
+    table.cell(statsTable, 0, 2, "Daily Wins", text_color=color.white)
+    table.cell(statsTable, 1, 2, str.tostring(dailyWins), text_color=color.lime)
+    table.cell(statsTable, 0, 3, "Daily Losses", text_color=color.white)
+    table.cell(statsTable, 1, 3, str.tostring(dailyLosses), text_color=color.red)
+    table.cell(statsTable, 0, 4, "Max Drawdown", text_color=color.white)
+    table.cell(statsTable, 1, 4, str.tostring(maxDrawdownPct, "#.##") + "%", text_color=color.orange)
+    table.cell(statsTable, 0, 5, "Total Trades", text_color=color.white)
+    table.cell(statsTable, 1, 5, str.tostring(total), text_color=color.white)
