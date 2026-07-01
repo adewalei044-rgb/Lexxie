@@ -1,13 +1,26 @@
 //@version=6
-indicator("RSI Divergence Master - Regular, Hidden & Key Level", overlay=true, max_lines_count=200, max_labels_count=200, max_boxes_count=200, max_bars_back=500)
+strategy("RSI Divergence Master - Regular, Hidden & Key Level", overlay = true,
+     initial_capital = input.float(10000, title = "Initial Capital", group = "Strategy Settings"),
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = input.float(100, title = "Order Size (% of Equity)", minval = 1, maxval = 100, group = "Strategy Settings"),
+     commission_type = strategy.commission.percent,
+     commission_value = input.float(0.05, title = "Commission (%)", minval = 0, group = "Strategy Settings"),
+     process_orders_on_close = true,
+     max_lines_count = 200, max_labels_count = 200, max_boxes_count = 200, max_bars_back = 500)
 
 // =====================================================================================
-// Three-strategy RSI divergence framework with simulated single-position trade tracking:
+// Three-strategy RSI divergence framework with a single-position partial take-profit engine:
 //   1) Regular divergence  -> reversal, confirmed by a swing trend line break
 //   2) Hidden divergence    -> trend continuation, filtered by 200 EMA, triggered by Stochastic cross
 //   3) Key level divergence -> divergence + rejection candle + trend line break at a major S/R level
-// Only one simulated trade is tracked at a time. Stop loss %, daily trade limit and each
-// RR target are editable in Settings. Signal-only indicator: no strategy() backtest output.
+// Only one position is held at a time. Stop loss %, daily trade limit and each RR target
+// (with partial close sizing and the breakeven stop move) are editable in Settings.
+//
+// The bar-by-bar TP/SL waterfall below is the single source of truth for trade math (it
+// drives both the on-chart dashboard and the real strategy.entry()/strategy.close() calls),
+// so the Strategy Tester's trade list matches this script's own reasoning exactly. Exits are
+// submitted as market closes on the trigger bar (process_orders_on_close = true), so fills
+// land at that bar's close rather than the exact TP/SL price - a standard simplification.
 // =====================================================================================
 
 // ---------------------------- Inputs ----------------------------
@@ -288,6 +301,7 @@ if openDir == 0 and canTrade
         tp2Done := false
         tp3Done := false
         dailyTradeCount += 1
+        strategy.entry("Long", strategy.long)
         if showTradeDraw
             riskBox    := box.new(bar_index, math.max(openEntry, openStop), bar_index, math.min(openEntry, openStop), bgcolor = color.new(color.red, 85), border_color = color.new(color.red, 40))
             rewardBox  := not na(openTP1) ? box.new(bar_index, math.max(openEntry, openTP1), bar_index, math.min(openEntry, openTP1), bgcolor = color.new(color.green, 85), border_color = color.new(color.green, 40)) : na
@@ -314,6 +328,7 @@ if openDir == 0 and canTrade
         tp2Done := false
         tp3Done := false
         dailyTradeCount += 1
+        strategy.entry("Short", strategy.short)
         if showTradeDraw
             riskBox    := box.new(bar_index, math.max(openEntry, openStop), bar_index, math.min(openEntry, openStop), bgcolor = color.new(color.red, 85), border_color = color.new(color.red, 40))
             rewardBox  := not na(openTP1) ? box.new(bar_index, math.max(openEntry, openTP1), bar_index, math.min(openEntry, openTP1), bgcolor = color.new(color.green, 85), border_color = color.new(color.green, 40)) : na
@@ -345,6 +360,7 @@ if openDir == 1 and bar_index > openBar and remainingFrac > 0
         stopRR = (openStop - openEntry) / initialRiskDist
         tradeRealizedR += remainingFrac * stopRR
         remainingFrac := 0.0
+        strategy.close("Long", comment = "SL")
     else
         if enableRR1 and not tp1Done and high >= openTP1
             tp1Done := true
@@ -352,15 +368,19 @@ if openDir == 1 and bar_index > openBar and remainingFrac > 0
                 closeNow = math.min(tp1ClosePct / 100, remainingFrac)
                 tradeRealizedR += closeNow * openRR1
                 remainingFrac -= closeNow
+                strategy.close("Long", qty_percent = closeNow * 100, comment = "TP1")
             else
                 tradeRealizedR += remainingFrac * openRR1
                 remainingFrac := 0.0
+                strategy.close("Long", comment = "TP1")
         if enableRR2 and not tp2Done and remainingFrac > 0 and high >= openTP2
             tp2Done := true
+            remainingBeforeTP2 = remainingFrac
             if enableRR3
                 closeNow = math.min(tp2PartialPct / 100, remainingFrac)
                 tradeRealizedR += closeNow * openRR2
                 remainingFrac -= closeNow
+                strategy.close("Long", qty_percent = closeNow / remainingBeforeTP2 * 100, comment = "TP2")
                 if moveStopToBEOnTP2
                     openStop := openEntry
                     if showTradeDraw and not na(riskBox)
@@ -369,10 +389,12 @@ if openDir == 1 and bar_index > openBar and remainingFrac > 0
             else
                 tradeRealizedR += remainingFrac * openRR2
                 remainingFrac := 0.0
+                strategy.close("Long", comment = "TP2")
         if enableRR3 and not tp3Done and remainingFrac > 0 and high >= openTP3
             tp3Done := true
             tradeRealizedR += remainingFrac * openRR3
             remainingFrac := 0.0
+            strategy.close("Long", comment = "TP3")
     if remainingFrac <= 0.0
         if tradeRealizedR > 0
             totalWins += 1
@@ -389,6 +411,7 @@ if openDir == -1 and bar_index > openBar and remainingFrac > 0
         stopRR = (openEntry - openStop) / initialRiskDist
         tradeRealizedR += remainingFrac * stopRR
         remainingFrac := 0.0
+        strategy.close("Short", comment = "SL")
     else
         if enableRR1 and not tp1Done and low <= openTP1
             tp1Done := true
@@ -396,15 +419,19 @@ if openDir == -1 and bar_index > openBar and remainingFrac > 0
                 closeNow = math.min(tp1ClosePct / 100, remainingFrac)
                 tradeRealizedR += closeNow * openRR1
                 remainingFrac -= closeNow
+                strategy.close("Short", qty_percent = closeNow * 100, comment = "TP1")
             else
                 tradeRealizedR += remainingFrac * openRR1
                 remainingFrac := 0.0
+                strategy.close("Short", comment = "TP1")
         if enableRR2 and not tp2Done and remainingFrac > 0 and low <= openTP2
             tp2Done := true
+            remainingBeforeTP2 = remainingFrac
             if enableRR3
                 closeNow = math.min(tp2PartialPct / 100, remainingFrac)
                 tradeRealizedR += closeNow * openRR2
                 remainingFrac -= closeNow
+                strategy.close("Short", qty_percent = closeNow / remainingBeforeTP2 * 100, comment = "TP2")
                 if moveStopToBEOnTP2
                     openStop := openEntry
                     if showTradeDraw and not na(riskBox)
@@ -413,10 +440,12 @@ if openDir == -1 and bar_index > openBar and remainingFrac > 0
             else
                 tradeRealizedR += remainingFrac * openRR2
                 remainingFrac := 0.0
+                strategy.close("Short", comment = "TP2")
         if enableRR3 and not tp3Done and remainingFrac > 0 and low <= openTP3
             tp3Done := true
             tradeRealizedR += remainingFrac * openRR3
             remainingFrac := 0.0
+            strategy.close("Short", comment = "TP3")
     if remainingFrac <= 0.0
         if tradeRealizedR > 0
             totalWins += 1
