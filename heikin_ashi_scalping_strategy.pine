@@ -34,6 +34,10 @@ showLabels        = input.bool(true, "Show Buy/Sell Entry Labels")
 showTable         = input.bool(true, "Show Stats Table")
 showHaOverlay     = input.bool(true, "Show Heikin-Ashi Overlay Candles")
 
+// ============================= 4. DIAGNOSTICS =============================
+debugMode     = input.bool(false, "Debug Mode: force a trade every N bars, ignoring every filter", group="4. Diagnostics")
+debugInterval = input.int(30, "Debug: Bars Between Forced Trades", minval=5, group="4. Diagnostics")
+
 // ============================= HEIKIN-ASHI CALCULATION =============================
 haClose = (open + high + low + close) / 4
 var float haOpen = na
@@ -98,7 +102,16 @@ buySetup  = trend ==  1 and pullbackDownOK and isDojiShape and isHighVolume
 rr = useFixedRR ? 1.0 : customRR
 
 // ============================= ENTRIES =============================
-if buySetup and inSession and canTrade and strategy.position_size == 0
+if debugMode and bar_index % debugInterval == 0 and strategy.position_size == 0
+    debugStop  = close - 10 * syminfo.mintick
+    debugLimit = close + 10 * syminfo.mintick
+    strategy.entry("DebugBuy", strategy.long)
+    strategy.exit("DebugExit", from_entry="DebugBuy", stop=debugStop, limit=debugLimit)
+    if showLabels
+        label.new(bar_index, low, "DBG", style=label.style_label_up,
+             color=color.new(color.blue, 0), textcolor=color.white, yloc=yloc.belowbar, size=size.small)
+
+if not debugMode and buySetup and inSession and canTrade and strategy.position_size == 0
     slPrice = haLow - slBufferTicks * syminfo.mintick
     riskPts = close - slPrice
     if riskPts > 0 and riskPts <= maxStopLossPoints
@@ -110,7 +123,7 @@ if buySetup and inSession and canTrade and strategy.position_size == 0
             label.new(bar_index, low, "BUY", style=label.style_label_up,
                  color=color.new(color.green, 0), textcolor=color.white, yloc=yloc.belowbar, size=size.small)
 
-if sellSetup and inSession and canTrade and strategy.position_size == 0
+if not debugMode and sellSetup and inSession and canTrade and strategy.position_size == 0
     slPrice = haHigh + slBufferTicks * syminfo.mintick
     riskPts = slPrice - close
     if riskPts > 0 and riskPts <= maxStopLossPoints
