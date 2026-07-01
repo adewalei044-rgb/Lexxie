@@ -82,7 +82,8 @@ useWaveTrendDiv   = input.bool(false, 'WaveTrend Divergence',       group = G_AL
 wtChlLen          = input.int(5,      'Chl Len',                    group = G_ALT, inline = 'wt')
 wtAvgLen          = input.int(10,     'Avg Len',                    group = G_ALT, inline = 'wt')
 useDailyLevels    = input.bool(false, 'Prior Daily High/Low/Close', group = G_ALT)
-useMTF            = input.bool(false, 'Multi-Timeframe EMA Confluence Table', group = G_ALT)
+useMTF            = input.bool(false, 'Multi-Timeframe EMA Confluence Table (top-left)', group = G_ALT)
+useStatsTable     = input.bool(true,  'Performance Stats Table (top-right)', group = G_ALT)
 
 //END SETTINGS
 
@@ -700,7 +701,7 @@ TF240Bull = securityNoRep1(syminfo.tickerid, "240" , emaBull)
 TF480Bull = securityNoRep1(syminfo.tickerid, "480" , emaBull)
 TFDBull   = securityNoRep1(syminfo.tickerid, "1440", emaBull)
 
-var table mtfTable = table.new(position.top_right, 2, 12, border_width = 1)
+var table mtfTable = table.new(position.top_left, 2, 12, border_width = 1)
 f_mtf_row(row, label_txt, bull) =>
     table.cell(mtfTable, 0, row, label_txt, bgcolor = color.new(color.gray, 70), text_color = color.white, text_size = size.tiny)
     table.cell(mtfTable, 1, row, bull ? "Bull" : "Bear", bgcolor = bull ? color.new(color.lime, 40) : color.new(color.red, 40), text_color = color.white, text_size = size.tiny)
@@ -957,8 +958,8 @@ fill(
 //<alerts labels>
 plotshape(
   i_alertOn and longE,
-  title      = 'Long',
-  text       = 'Long',
+  title      = 'Buy Entry',
+  text       = 'Buy',
   textcolor  = color.white,
   color      = color.green,
   style      = shape.labelup,
@@ -966,8 +967,8 @@ plotshape(
   location   = location.belowbar)
 plotshape(
   i_alertOn and shortE,
-  title      = 'Short',
-  text       = 'Short',
+  title      = 'Sell Entry',
+  text       = 'Sell',
   textcolor  = color.white,
   color      = color.red,
   style      = shape.labeldown,
@@ -1119,3 +1120,46 @@ if shortX
     alert(message = 'Short Exit',  freq = alert.freq_once_per_bar_close)
 //#endregion }
 // ——————————— <↑↑↑ G_SCRIPT03 ↑↑↑>
+
+//#region ———— <↓↓↓ G_SCRIPT04 — PERFORMANCE STATS TABLE ↓↓↓> {
+//      Daily win/loss tally: compares equity at the start of each trading
+//      day against equity at the start of the next one.
+var float dayStartEquity = na
+var int   dailyWins      = 0
+var int   dailyLosses    = 0
+newDay = ta.change(time('D')) != 0
+if newDay
+    if not na(dayStartEquity)
+        dayPnl = strategy.equity - dayStartEquity
+        if dayPnl > 0
+            dailyWins += 1
+        else if dayPnl < 0
+            dailyLosses += 1
+    dayStartEquity := strategy.equity
+
+//      Running max drawdown, expressed as % of the highest equity reached.
+var float peakEquity = strategy.initial_capital
+peakEquity := math.max(peakEquity, strategy.equity)
+currentDrawdownPct = peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100 : 0.0
+var float maxDrawdownPct = 0.0
+maxDrawdownPct := math.max(maxDrawdownPct, currentDrawdownPct)
+
+totalClosed = strategy.closedtrades
+winRatePct  = totalClosed > 0 ? strategy.wintrades / totalClosed * 100 : 0.0
+
+var table statsTable = table.new(position.top_right, 2, 7, border_width = 1)
+f_stats_row(row, label_txt, value_txt, val_col) =>
+    table.cell(statsTable, 0, row, label_txt, bgcolor = color.new(color.gray, 70), text_color = color.white, text_size = size.small)
+    table.cell(statsTable, 1, row, value_txt, bgcolor = color.new(color.gray, 70), text_color = val_col,      text_size = size.small)
+
+if useStatsTable and barstate.islast
+    table.cell(statsTable, 0, 0, 'Performance', bgcolor = color.new(color.gray, 20), text_color = color.white, text_size = size.small)
+    table.cell(statsTable, 1, 0, '',            bgcolor = color.new(color.gray, 20), text_color = color.white, text_size = size.small)
+    f_stats_row(1, 'Win Rate',      str.tostring(winRatePct, '#.##') + '%', winRatePct >= 50 ? color.lime : color.orange)
+    f_stats_row(2, 'Wins',          str.tostring(strategy.wintrades),        color.lime)
+    f_stats_row(3, 'Losses',        str.tostring(strategy.losstrades),       color.red)
+    f_stats_row(4, 'Daily Wins',    str.tostring(dailyWins),                 color.lime)
+    f_stats_row(5, 'Daily Losses',  str.tostring(dailyLosses),               color.red)
+    f_stats_row(6, 'Max Drawdown',  str.tostring(maxDrawdownPct, '#.##') + '%', color.red)
+//#endregion }
+// ——————————— <↑↑↑ G_SCRIPT04 ↑↑↑>
