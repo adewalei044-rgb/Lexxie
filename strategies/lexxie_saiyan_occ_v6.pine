@@ -515,12 +515,12 @@ f_fractalize (_src) => top_fractal ? 1 : bot_fractal ? -1 : 0
 f_findDivs(src, topLimit, botLimit) =>
     fractalTop = f_fractalize(src) > 0 and src[2] >= topLimit ? src[2] : na
     fractalBot = f_fractalize(src) < 0 and src[2] <= botLimit ? src[2] : na
-    highPrev   = ta.valuewhen(fractalTop, src[2], 0)[2]
-    highPrice  = ta.valuewhen(fractalTop, high[2], 0)[2]
-    lowPrev    = ta.valuewhen(fractalBot, src[2], 0)[2]
-    lowPrice   = ta.valuewhen(fractalBot, low[2], 0)[2]
-    bearSignal = fractalTop and high[1] > highPrice and src[1] < highPrev
-    bullSignal = fractalBot and low[1] < lowPrice and src[1] > lowPrev
+    highPrev   = ta.valuewhen(not na(fractalTop), src[2], 0)[2]
+    highPrice  = ta.valuewhen(not na(fractalTop), high[2], 0)[2]
+    lowPrev    = ta.valuewhen(not na(fractalBot), src[2], 0)[2]
+    lowPrice   = ta.valuewhen(not na(fractalBot), low[2], 0)[2]
+    bearSignal = not na(fractalTop) and high[1] > highPrice and src[1] < highPrev
+    bullSignal = not na(fractalBot) and low[1] < lowPrice and src[1] > lowPrev
     [bearSignal, bullSignal]
 
 //      WAVETREND + DIVERGENCE (derived boolean signal, plotted at price level only — the
