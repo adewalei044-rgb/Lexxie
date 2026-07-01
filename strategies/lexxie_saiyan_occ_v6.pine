@@ -777,58 +777,35 @@ G_RISK       = '■ ' + 'Risk Management'
 // ——————————— <constant_declarations>
 //Tooltip
 T_LVL        = '(%) Exit Level'
-T_QTY        = '(%) Adjust trade exit volume'
 T_MSG        = 'Paste JSON message for your bot'
 //Webhook Message
 O_LEMSG      = 'Long Entry'
 O_LXMSGSL    = 'Long SL'
-O_LXMSGTP1   = 'Long TP1'
-O_LXMSGTP2   = 'Long TP2'
-O_LXMSGTP3   = 'Long TP3'
+O_LXMSGTP    = 'Long TP'
 O_LXMSG      = 'Long Exit'
 O_SEMSG      = 'Short Entry'
 O_SXMSGSL    = 'Short SL'
-O_SXMSGA     = 'Short TP1'
-O_SXMSGB     = 'Short TP2'
-O_SXMSGC     = 'Short TP3'
+O_SXMSGTP    = 'Short TP'
 O_SXMSGX     = 'Short Exit'
 
 // ——————————— <input>
-i_lxLvlTP1   = input.float      (1,         'Level TP1'                     , group = G_RISK,
+// Fixed 1:2 risk/reward — Stop Loss 0.5%, Take Profit 1% (double the risk).
+i_lxLvlTP    = input.float      (1,         'Take Profit (1:2 R:R)'        , group = G_RISK,
      tooltip =                   T_LVL)
-i_lxQtyTP1   = input.float      (50,        'Qty   TP1'                     , group = G_RISK,
-     tooltip =                   T_QTY)
-i_lxLvlTP2   = input.float      (1.5,       'Level TP2'                     , group = G_RISK,
-     tooltip =                   T_LVL)
-i_lxQtyTP2   = input.float      (30,        'Qty   TP2'                     , group = G_RISK,
-     tooltip =                   T_QTY)
-i_lxLvlTP3   = input.float      (2,         'Level TP3'                     , group = G_RISK,
-     tooltip =                   T_LVL)
-i_lxQtyTP3   = input.float      (20,        'Qty   TP3'                     , group = G_RISK,
-     tooltip =                   T_QTY)
 i_lxLvlSL    = input.float      (0.5,       'Stop Loss'                     , group = G_RISK,
      tooltip =                   T_LVL)
-i_sxLvlTP1   = i_lxLvlTP1
-i_sxQtyTP1   = i_lxQtyTP1
-i_sxLvlTP2   = i_lxLvlTP2
-i_sxQtyTP2   = i_lxQtyTP2
-i_sxLvlTP3   = i_lxLvlTP3
-i_sxQtyTP3   = i_lxQtyTP3
+i_sxLvlTP    = i_lxLvlTP
 i_sxLvlSL    = i_lxLvlSL
 
 G_MSG        = '■ ' + 'Webhook Message'
-i_leMsg      = input.string     (O_LEMSG   ,'Long Entry'                   , group = G_MSG, tooltip = T_MSG)
-i_lxMsgSL    = input.string     (O_LXMSGSL ,'Long SL'                      , group = G_MSG, tooltip = T_MSG)
-i_lxMsgTP1   = input.string     (O_LXMSGTP1,'Long TP1'                     , group = G_MSG, tooltip = T_MSG)
-i_lxMsgTP2   = input.string     (O_LXMSGTP2,'Long TP2'                     , group = G_MSG, tooltip = T_MSG)
-i_lxMsgTP3   = input.string     (O_LXMSGTP3,'Long TP3'                     , group = G_MSG, tooltip = T_MSG)
-i_lxMsg      = input.string     (O_LXMSG   ,'Long Exit'                    , group = G_MSG, tooltip = T_MSG)
-i_seMsg      = input.string     (O_SEMSG   ,'Short Entry'                  , group = G_MSG, tooltip = T_MSG)
-i_sxMsgSL    = input.string     (O_SXMSGSL ,'Short SL'                     , group = G_MSG, tooltip = T_MSG)
-i_sxMsgTP1   = input.string     (O_SXMSGA  ,'Short TP1'                    , group = G_MSG, tooltip = T_MSG)
-i_sxMsgTP2   = input.string     (O_SXMSGB  ,'Short TP2'                    , group = G_MSG, tooltip = T_MSG)
-i_sxMsgTP3   = input.string     (O_SXMSGC  ,'Short TP3'                    , group = G_MSG, tooltip = T_MSG)
-i_sxMsg      = input.string     (O_SXMSGX  ,'Short Exit'                   , group = G_MSG, tooltip = T_MSG)
+i_leMsg      = input.string     (O_LEMSG  ,'Long Entry'                   , group = G_MSG, tooltip = T_MSG)
+i_lxMsgSL    = input.string     (O_LXMSGSL,'Long SL'                      , group = G_MSG, tooltip = T_MSG)
+i_lxMsgTP    = input.string     (O_LXMSGTP,'Long TP'                      , group = G_MSG, tooltip = T_MSG)
+i_lxMsg      = input.string     (O_LXMSG  ,'Long Exit'                    , group = G_MSG, tooltip = T_MSG)
+i_seMsg      = input.string     (O_SEMSG  ,'Short Entry'                  , group = G_MSG, tooltip = T_MSG)
+i_sxMsgSL    = input.string     (O_SXMSGSL,'Short SL'                     , group = G_MSG, tooltip = T_MSG)
+i_sxMsgTP    = input.string     (O_SXMSGTP,'Short TP'                     , group = G_MSG, tooltip = T_MSG)
+i_sxMsg      = input.string     (O_SXMSGX ,'Short Exit'                   , group = G_MSG, tooltip = T_MSG)
 i_src        = close
 
 G_DISPLAY    = 'Display'
@@ -868,43 +845,31 @@ slLine     := condition[1] <=  0.0 and leTrigger ? slBotLvl :
               condition[1] >=  0.0 and seTrigger ? slTopLvl : nz(slLine[1])
 slLong      = f_cross(low,  slLine, false)
 slShort     = f_cross(high, slLine, true )
-//<TP1, TP2 & TP3>
-[tp3Line]    = f_tp(condition, 1.2,leTrigger, seTrigger, i_src, i_lxLvlTP3, i_sxLvlTP3)
-[tp2Line]    = f_tp(condition, 1.1,leTrigger, seTrigger, i_src, i_lxLvlTP2, i_sxLvlTP2)
-[tp1Line]    = f_tp(condition, 1.0,leTrigger, seTrigger, i_src, i_lxLvlTP1, i_sxLvlTP1)
-tp3Long      = f_cross(high, tp3Line, true )
-tp3Short     = f_cross(low,  tp3Line, false)
-tp2Long      = f_cross(high, tp2Line, true )
-tp2Short     = f_cross(low,  tp2Line, false)
-tp1Long      = f_cross(high, tp1Line, true )
-tp1Short     = f_cross(low,  tp1Line, false)
+//<Single TP — fixed 1:2 R:R (TP 1%, SL 0.5%)>
+[tpLine]     = f_tp(condition, 1.0, leTrigger, seTrigger, i_src, i_lxLvlTP, i_sxLvlTP)
+tpLong       = f_cross(high, tpLine, true )
+tpShort      = f_cross(low,  tpLine, false)
 
 switch
     leTrigger and condition[1] <=  0.0 => condition :=  1.0
     seTrigger and condition[1] >=  0.0 => condition := -1.0
-    tp3Long   and condition[1] ==  1.2 => condition :=  1.3
-    tp3Short  and condition[1] == -1.2 => condition := -1.3
-    tp2Long   and condition[1] ==  1.1 => condition :=  1.2
-    tp2Short  and condition[1] == -1.1 => condition := -1.2
-    tp1Long   and condition[1] ==  1.0 => condition :=  1.1
-    tp1Short  and condition[1] == -1.0 => condition := -1.1
-    slLong    and condition[1] >=  1.0 => condition :=  0.0
-    slShort   and condition[1] <= -1.0 => condition :=  0.0
-    lxTrigger and condition[1] >=  1.0 => condition :=  0.0
-    sxTrigger and condition[1] <= -1.0 => condition :=  0.0
+    tpLong    and condition[1] ==  1.0 => condition :=  0.0
+    tpShort   and condition[1] == -1.0 => condition :=  0.0
+    slLong    and condition[1] ==  1.0 => condition :=  0.0
+    slShort   and condition[1] == -1.0 => condition :=  0.0
+    lxTrigger and condition[1] ==  1.0 => condition :=  0.0
+    sxTrigger and condition[1] == -1.0 => condition :=  0.0
 
 longE        = leTrigger and condition[1] <=  0.0 and condition ==  1.0
 shortE       = seTrigger and condition[1] >=  0.0 and condition == -1.0
-longX        = lxTrigger and condition[1] >=  1.0 and condition ==  0.0
-shortX       = sxTrigger and condition[1] <= -1.0 and condition ==  0.0
-longSL       = slLong    and condition[1] >=  1.0 and condition ==  0.0
-shortSL      = slShort   and condition[1] <= -1.0 and condition ==  0.0
-longTP3      = tp3Long   and condition[1] ==  1.2 and condition ==  1.3
-shortTP3     = tp3Short  and condition[1] == -1.2 and condition == -1.3
-longTP2      = tp2Long   and condition[1] ==  1.1 and condition ==  1.2
-shortTP2     = tp2Short  and condition[1] == -1.1 and condition == -1.2
-longTP1      = tp1Long   and condition[1] ==  1.0 and condition ==  1.1
-shortTP1     = tp1Short  and condition[1] == -1.0 and condition == -1.1
+longX        = lxTrigger and condition[1] ==  1.0 and condition ==  0.0
+shortX       = sxTrigger and condition[1] == -1.0 and condition ==  0.0
+// TP is checked before SL in the switch above, so on a same-bar gap through
+// both levels TP wins — these mirror that same priority to stay consistent.
+longTP       = tpLong    and condition[1] ==  1.0
+shortTP      = tpShort   and condition[1] == -1.0
+longSL       = slLong    and condition[1] ==  1.0 and not tpLong
+shortSL      = slShort   and condition[1] == -1.0 and not tpShort
 
 // ——————————— <strategy_calls> {
 //<long orders>
@@ -916,36 +881,14 @@ if strategy.position_size <= 0 and longE and barstate.isconfirmed
       comment          = 'LE')
 if strategy.position_size > 0 and condition ==  1.0
     strategy.exit(
-      id               = 'LXTP1',
+      id               = 'LX',
       from_entry       = 'Long',
-      qty_percent      = i_lxQtyTP1,
-      limit            = tp1Line,
+      qty_percent      = 100,
+      limit            = tpLine,
       stop             = slLine,
-      comment_profit   = 'LXTP1',
+      comment_profit   = 'TP',
       comment_loss     = 'SL',
-      alert_profit     = i_lxMsgTP1,
-      alert_loss       = i_lxMsgSL)
-if strategy.position_size > 0 and condition ==  1.1
-    strategy.exit(
-      id               = 'LXTP2',
-      from_entry       = 'Long',
-      qty_percent      = i_lxQtyTP2,
-      limit            = tp2Line,
-      stop             = slLine,
-      comment_profit   = 'LXTP2',
-      comment_loss     = 'SL',
-      alert_profit     = i_lxMsgTP2,
-      alert_loss       = i_lxMsgSL)
-if strategy.position_size > 0 and condition ==  1.2
-    strategy.exit(
-      id               = 'LXTP3',
-      from_entry       = 'Long',
-      qty_percent      = i_lxQtyTP3,
-      limit            = tp3Line,
-      stop             = slLine,
-      comment_profit   = 'LXTP3',
-      comment_loss     = 'SL',
-      alert_profit     = i_lxMsgTP3,
+      alert_profit     = i_lxMsgTP,
       alert_loss       = i_lxMsgSL)
 if longX
     strategy.close(
@@ -961,36 +904,14 @@ if strategy.position_size >= 0 and shortE and barstate.isconfirmed
       comment          = 'SE')
 if strategy.position_size < 0 and condition == -1.0
     strategy.exit(
-      id               = 'SXTP1',
+      id               = 'SX',
       from_entry       = 'Short',
-      qty_percent      = i_sxQtyTP1,
-      limit            = tp1Line,
+      qty_percent      = 100,
+      limit            = tpLine,
       stop             = slLine,
-      comment_profit   = 'SXTP1',
+      comment_profit   = 'TP',
       comment_loss     = 'SL',
-      alert_profit     = i_sxMsgTP1,
-      alert_loss       = i_sxMsgSL)
-if strategy.position_size < 0 and condition == -1.1
-    strategy.exit(
-      id               = 'SXTP2',
-      from_entry       = 'Short',
-      qty_percent      = i_sxQtyTP2,
-      limit            = tp2Line,
-      stop             = slLine,
-      comment_profit   = 'SXTP2',
-      comment_loss     = 'SL',
-      alert_profit     = i_sxMsgTP2,
-      alert_loss       = i_sxMsgSL)
-if strategy.position_size < 0 and condition == -1.2
-    strategy.exit(
-      id               = 'SXTP3',
-      from_entry       = 'Short',
-      qty_percent      = i_sxQtyTP3,
-      limit            = tp3Line,
-      stop             = slLine,
-      comment_profit   = 'SXTP3',
-      comment_loss     = 'SL',
-      alert_profit     = i_sxMsgTP3,
+      alert_profit     = i_sxMsgTP,
       alert_loss       = i_sxMsgSL)
 if shortX
     strategy.close(
@@ -1005,53 +926,29 @@ c_entry      = leTrigger or seTrigger ? na :
                condition == 0.0       ? na : color.blue
 c_sl         = leTrigger or seTrigger ? na :
                condition == 0.0       ? na : color.red
-p_tp1Line    = plot (
+p_tpLine     = plot (
   condition ==  1.0 or
-  condition == -1.0 ? tp1Line : na,
-  title      = "TP Line 1",
-  color      = c_tp,
-  linewidth  = 1,
-  style      = plot.style_linebr)
-p_tp2Line    = plot (
-  condition ==  1.0 or
-  condition == -1.0 or
-  condition ==  1.1 or
-  condition == -1.1 ? tp2Line : na,
-  title      = "TP Line 2",
-  color      = c_tp,
-  linewidth  = 1,
-  style      = plot.style_linebr)
-p_tp3Line    = plot (
-  condition ==  1.0 or
-  condition == -1.0 or
-  condition ==  1.1 or
-  condition == -1.1 or
-  condition ==  1.2 or
-  condition == -1.2 ? tp3Line : na,
-  title      = "TP Line 3",
+  condition == -1.0 ? tpLine : na,
+  title      = "TP Line",
   color      = c_tp,
   linewidth  = 1,
   style      = plot.style_linebr)
 p_entryLine  = plot (
-  condition >=  1.0 or
-  condition <= -1.0 ? entryLine : na,
+  condition ==  1.0 or
+  condition == -1.0 ? entryLine : na,
   title      = "Entry Line",
   color      = c_entry,
   linewidth  = 1,
   style      = plot.style_linebr)
 p_slLine     = plot (
   condition ==  1.0 or
-  condition == -1.0 or
-  condition ==  1.1 or
-  condition == -1.1 or
-  condition ==  1.2 or
-  condition == -1.2 ? slLine : na,
+  condition == -1.0 ? slLine : na,
   title      = "SL Line",
   color      = c_sl,
   linewidth  = 1,
   style      = plot.style_linebr)
 fill(
-  p_tp3Line, p_entryLine,
+  p_tpLine, p_entryLine,
   color      = leTrigger or seTrigger ? na :color.new(color.green, 90))
 fill(
   p_entryLine, p_slLine,
@@ -1085,29 +982,11 @@ plotshape(
   style      = shape.labelup,
   size       = size.tiny,
   location   = location.absolute)
-l_tp         = i_alertOn and (longTP1 or shortTP1) ? close : na
+l_tp         = i_alertOn and (longTP or shortTP) ? close : na
 plotshape(
   l_tp,
-  title      = "TP1 Cross",
-  text       = "TP1",
-  textcolor  = color.white,
-  color      = color.olive,
-  style      = shape.labelup,
-  size       = size.tiny,
-  location   = location.absolute)
-plotshape(
-  i_alertOn and (longTP2 or shortTP2) ? close : na,
-  title      = "TP2 Cross",
-  text       = "TP2",
-  textcolor  = color.white,
-  color      = color.olive,
-  style      = shape.labelup,
-  size       = size.tiny,
-  location   = location.absolute)
-plotshape(
-  i_alertOn and (longTP3 or shortTP3) ? close : na,
-  title      = "TP3 Cross",
-  text       = "TP3",
+  title      = "TP Cross",
+  text       = "TP",
   textcolor  = color.white,
   color      = color.olive,
   style      = shape.labelup,
@@ -1151,13 +1030,9 @@ f_qDq(_array, _val) =>
 
 var line[]  a_slLine     = array.new_line(1)
 var line[]  a_entryLine  = array.new_line(1)
-var line[]  a_tp3Line    = array.new_line(1)
-var line[]  a_tp2Line    = array.new_line(1)
-var line[]  a_tp1Line    = array.new_line(1)
+var line[]  a_tpLine     = array.new_line(1)
 var label[] a_slLabel    = array.new_label(1)
-var label[] a_tp3label   = array.new_label(1)
-var label[] a_tp2label   = array.new_label(1)
-var label[] a_tp1label   = array.new_label(1)
+var label[] a_tpLabel    = array.new_label(1)
 var label[] a_entryLabel = array.new_label(1)
 
 newEntry     = longE or shortE
@@ -1185,30 +1060,12 @@ line.delete(
    style = line.style_solid,
    color = color.blue)))
 line.delete(
-  f_qDq(a_tp3Line,
+  f_qDq(a_tpLine,
   line.new(
    entryIndex,
-   tp3Line,
+   tpLine,
    last_bar_index + l_right,
-   tp3Line,
-   style = line.style_solid,
-   color = c_tp)))
-line.delete(
-  f_qDq(a_tp2Line,
-  line.new(
-   entryIndex,
-   tp2Line,
-   last_bar_index + l_right,
-   tp2Line,
-   style = line.style_solid,
-   color = c_tp)))
-line.delete(
-  f_qDq(a_tp1Line,
-  line.new(
-   entryIndex,
-   tp1Line,
-   last_bar_index + l_right,
-   tp1Line,
+   tpLine,
    style = line.style_solid,
    color = c_tp)))
 
@@ -1231,29 +1088,11 @@ label.delete(
    textcolor  = color.white,
    color = color.blue)))
 label.delete(
-  f_qDq(a_tp3label,
+  f_qDq(a_tpLabel,
   label.new(
    last_bar_index + l_right,
-   tp3Line,
-   'TP3: ' + str.tostring(tp3Line, '##.###'),
-   style = label.style_label_left,
-   textcolor  = color.white,
-   color = c_tp)))
-label.delete(
-  f_qDq(a_tp2label,
-  label.new(
-   last_bar_index + l_right,
-   tp2Line,
-   'TP2: ' + str.tostring(tp2Line, '##.###'),
-   style = label.style_label_left,
-   textcolor  = color.white,
-   color = c_tp)))
-label.delete(
-  f_qDq(a_tp1label,
-  label.new(
-   last_bar_index + l_right,
-   tp1Line,
-   'TP1: ' + str.tostring(tp1Line, '##.###'),
+   tpLine,
+   'TP: ' + str.tostring(tpLine, '##.###'),
    style = label.style_label_left,
    textcolor  = color.white,
    color = c_tp)))
