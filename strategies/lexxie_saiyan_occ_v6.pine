@@ -29,7 +29,8 @@ G_SCRIPT01 = '■ ' + 'SAIYAN OCC'
 
 // === CORE SIGNAL INPUTS ===
 res           = input.timeframe('15',  'TIMEFRAME', group = 'NON REPAINT')
-useRes        = input(true,            'Use Alternate Signals')
+useRes        = input(false,           'Use Alternate Signals',
+     tooltip = 'When ON, entries are computed from a larger timeframe (chart timeframe x Multiplier) and only update once per that bigger bar, which can look badly out of sync with the small candles on your chart. Leave OFF so entries react to this chart\'s own candles.')
 intRes        = input(8,               'Multiplier for Alternate Signals')
 basisType     = input.string('ALMA',   'MA Type: ', options = ['TEMA', 'HullMA', 'ALMA'])
 basisLen      = input.int(2,           'MA Period', minval = 1)
