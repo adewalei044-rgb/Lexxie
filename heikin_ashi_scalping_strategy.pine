@@ -43,10 +43,9 @@ haLow  = math.min(low, math.min(haOpen, haClose))
 
 emaVal = ta.ema(haClose, emaLength)
 
-if showHaOverlay
-    plotcandle(haOpen, haHigh, haLow, haClose, title="Heikin-Ashi",
-         color=haClose >= haOpen ? color.new(color.lime, 0) : color.new(color.red, 0),
-         wickcolor=color.gray, bordercolor=haClose >= haOpen ? color.new(color.lime, 0) : color.new(color.red, 0))
+plotcandle(showHaOverlay ? haOpen : na, showHaOverlay ? haHigh : na, showHaOverlay ? haLow : na, showHaOverlay ? haClose : na, title="Heikin-Ashi",
+     color=haClose >= haOpen ? color.new(color.lime, 0) : color.new(color.red, 0),
+     wickcolor=color.gray, bordercolor=haClose >= haOpen ? color.new(color.lime, 0) : color.new(color.red, 0))
 plot(emaVal, title="100 EMA (HA)", color=color.white, linewidth=2)
 
 // ============================= TREND FILTER =============================
@@ -88,7 +87,7 @@ for i = 1 to volLookback
 inSession = not useSessionFilter or not na(time(timeframe.period, sessionWindow))
 
 var int tradesToday = 0
-if ta.change(time("D"))
+if ta.change(time("D")) != 0
     tradesToday := 0
 canTrade = tradesToday < maxTradesPerDay
 
@@ -130,7 +129,7 @@ var int lastClosedCount = 0
 var float equityPeak = strategy.initial_capital
 var float maxDrawdownPct = 0.0
 
-if ta.change(time("D"))
+if ta.change(time("D")) != 0
     dailyWins := 0
     dailyLosses := 0
 
