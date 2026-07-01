@@ -37,8 +37,8 @@ basisLen      = input.int(2,           'MA Period', minval = 1)
 offsetSigma   = input.int(5,           'Offset for LSMA / Sigma for ALMA', minval = 0)
 offsetALMA    = input.float(0.85,      'Offset for ALMA', minval = 0, step = 0.01)
 scolor        = input(false,           'Show coloured Bars to indicate Trend?')
-delayOffset   = input.int(1,           'Delay Open/Close MA', minval = 0, step = 1,
-     tooltip = 'Forces Non-Repainting. Keep >= 1 so the alternate-timeframe series can never repaint.')
+delayOffset   = input.int(0,           'Delay Open/Close MA', minval = 0, step = 1,
+     tooltip = 'Shifts the MA calculation back this many bars before detecting a cross. 0 = entries align exactly with the visible close/open cross on this chart. Only raise this above 0 if you turn "Use Alternate Signals" ON, to keep the higher-timeframe read from repainting.')
 tradeType     = input.string('BOTH',   'What trades should be taken : ',
      options = ['LONG', 'SHORT', 'BOTH', 'NONE'])
 h             = input(false,           'Signals for Heikin Ashi Candles')
