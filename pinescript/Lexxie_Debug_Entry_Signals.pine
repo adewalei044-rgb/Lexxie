@@ -204,10 +204,14 @@ if array.size(supplyZones) > 0
         if close <= box.get_top(zBox) and close >= box.get_bottom(zBox)
             inSupplyZone := true
 
-prevInDemandZone = inDemandZone[1]
-prevInSupplyZone = inSupplyZone[1]
-enterDemandZone = barConfirmed and inDemandZone and (na(prevInDemandZone) or not prevInDemandZone)
-enterSupplyZone = barConfirmed and inSupplyZone and (na(prevInSupplyZone) or not prevInSupplyZone)
+var bool prevInDemandZone = false
+var bool prevInSupplyZone = false
+
+enterDemandZone = barConfirmed and inDemandZone and not prevInDemandZone
+enterSupplyZone = barConfirmed and inSupplyZone and not prevInSupplyZone
+
+prevInDemandZone := inDemandZone
+prevInSupplyZone := inSupplyZone
 
 // =====================================================================================
 // RSI - overbought/oversold levels + divergence, tracked internally for trading;
