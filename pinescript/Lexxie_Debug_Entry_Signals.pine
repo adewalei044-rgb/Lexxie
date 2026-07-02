@@ -1,0 +1,230 @@
+//@version=6
+strategy("Lexxie - Debug Entry Signals (Engulfing / Signal Bar / Key Bar)",
+     shorttitle = "Lexxie Debug Entries",
+     overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 10,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.02,
+     calc_on_every_tick = true,
+     max_bars_back = 500)
+
+// =====================================================================================
+// INPUTS
+// =====================================================================================
+
+grpSignals   = "Entry Signal Types (choose which patterns can trigger trades)"
+useEngulfing = input.bool(true,  "Trade Engulfing Candle",        group = grpSignals)
+useSignalBar = input.bool(false, "Trade Signal Bar (Pin Bar)",    group = grpSignals)
+useKeyBar    = input.bool(false, "Trade Key Bar (Momentum Bar)",  group = grpSignals)
+allowLongs   = input.bool(true,  "Allow Long (Buy) Entries",      group = grpSignals)
+allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSignals)
+
+grpEngulf           = "Engulfing Candle Settings"
+engulfMinBodyRatio  = input.float(1.0, "Min Body Size vs Prev Body", minval = 0.5, step = 0.1, group = grpEngulf,
+     tooltip = "Current candle's body must be at least this many times the size of the previous candle's body")
+
+grpSignalBar   = "Signal Bar (Pin Bar) Settings"
+sigBarWickRatio = input.float(2.0, "Min Wick-to-Body Ratio", minval = 1.0, step = 0.1, group = grpSignalBar,
+     tooltip = "Rejection wick must be at least this many times the candle body")
+sigBarLookback  = input.int(5, "Prior Trend Lookback (bars)", minval = 1, group = grpSignalBar,
+     tooltip = "Number of bars used to confirm a prior directional move before the signal bar")
+
+grpKeyBar        = "Key Bar (Momentum Bar) Settings"
+keyBarAtrLen     = input.int(14, "ATR Length", minval = 1, group = grpKeyBar)
+keyBarRangeMult  = input.float(1.5, "Min Bar Range vs ATR", minval = 1.0, step = 0.1, group = grpKeyBar)
+keyBarCloseLoc   = input.float(0.25, "Max Close Distance From Extreme (% of range)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpKeyBar,
+     tooltip = "How close the close must be to the bar's high (bullish) or low (bearish)")
+
+grpTrade    = "Trade Management"
+slType      = input.string("ATR", "Stop Loss Type", options = ["ATR", "Points", "Percent"], group = grpTrade)
+slAtrLen    = input.int(14, "SL ATR Length", minval = 1, group = grpTrade)
+slAtrMult   = input.float(1.5, "SL ATR Multiplier", minval = 0.1, step = 0.1, group = grpTrade)
+slPoints    = input.float(10, "SL Points", minval = 0.0001, group = grpTrade)
+slPercent   = input.float(0.5, "SL Percent", minval = 0.01, step = 0.05, group = grpTrade)
+rrRatio     = input.float(2.0, "Reward : Risk Ratio", minval = 0.1, step = 0.1, group = grpTrade)
+
+grpDebug   = "Debug Mode"
+debugMode  = input.bool(true, "Enable Debug Mode (plot every detected pattern, even if not tradeable)", group = grpDebug)
+warnTf     = input.bool(true, "Warn if chart timeframe isn't 1 minute", group = grpDebug)
+
+grpLabels    = "Buy / Sell Entry Labels"
+showLabels   = input.bool(true, "Show Buy/Sell Entry Labels", group = grpLabels)
+buyColor     = input.color(color.new(color.green, 0), "Buy Label Color", group = grpLabels)
+sellColor    = input.color(color.new(color.red, 0),   "Sell Label Color", group = grpLabels)
+
+grpTable       = "Stats Table"
+showTable      = input.bool(true, "Show Stats Table", group = grpTable)
+tablePos       = input.string(position.top_right, "Table Position",
+     options = [position.top_right, position.top_left, position.bottom_right, position.bottom_left], group = grpTable)
+tableTextSize  = input.string(size.small, "Table Text Size",
+     options = [size.tiny, size.small, size.normal, size.large], group = grpTable)
+
+// =====================================================================================
+// PATTERN DETECTION
+// =====================================================================================
+
+// --- Engulfing candle ---
+bullishEngulf = close[1] < open[1] and close > open and close > open[1] and open <= close[1] and
+     (close - open) >= (open[1] - close[1]) * engulfMinBodyRatio
+bearishEngulf = close[1] > open[1] and close < open and close < open[1] and open >= close[1] and
+     (open - close) >= (close[1] - open[1]) * engulfMinBodyRatio
+
+// --- Signal bar (pin bar / rejection bar) ---
+body        = math.abs(close - open)
+upperWick   = high - math.max(close, open)
+lowerWick   = math.min(close, open) - low
+priorDowntrend = close[1] < close[1 + sigBarLookback]
+priorUptrend   = close[1] > close[1 + sigBarLookback]
+
+bullishSignalBar = body > 0 and lowerWick >= body * sigBarWickRatio and lowerWick > upperWick and priorDowntrend
+bearishSignalBar = body > 0 and upperWick >= body * sigBarWickRatio and upperWick > lowerWick and priorUptrend
+
+// --- Key bar (momentum / breakout bar) ---
+atrKey       = ta.atr(keyBarAtrLen)
+barRange     = high - low
+closeLocBull = barRange > 0 ? (high - close) / barRange : 1.0
+closeLocBear = barRange > 0 ? (close - low) / barRange : 1.0
+
+bullishKeyBar = barRange >= atrKey * keyBarRangeMult and close > open and closeLocBull <= keyBarCloseLoc
+bearishKeyBar = barRange >= atrKey * keyBarRangeMult and close < open and closeLocBear <= keyBarCloseLoc
+
+// =====================================================================================
+// SIGNAL COMBINATION
+// =====================================================================================
+
+longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar)
+shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar)
+
+longSignal  = allowLongs  and longPatternHit
+shortSignal = allowShorts and shortPatternHit
+
+f_buildSignalText(engulf, sigbar, keybar) =>
+    txt = ""
+    if engulf
+        txt := txt + "Engulf"
+    if sigbar
+        txt := txt + (txt == "" ? "" : "+") + "SigBar"
+    if keybar
+        txt := txt + (txt == "" ? "" : "+") + "KeyBar"
+    txt
+
+longSignalText  = f_buildSignalText(useEngulfing and bullishEngulf, useSignalBar and bullishSignalBar, useKeyBar and bullishKeyBar)
+shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar and bearishSignalBar, useKeyBar and bearishKeyBar)
+
+// =====================================================================================
+// DEBUG PLOTS - shows every raw pattern detected, whether or not it's enabled for trading
+// =====================================================================================
+
+plotshape(debugMode and bullishEngulf,    title = "Bull Engulf",  style = shape.triangleup,   location = location.belowbar, color = color.new(color.lime,     0), size = size.tiny)
+plotshape(debugMode and bearishEngulf,    title = "Bear Engulf",  style = shape.triangledown, location = location.abovebar, color = color.new(color.red,     0), size = size.tiny)
+plotshape(debugMode and bullishSignalBar, title = "Bull SigBar",  style = shape.circle,        location = location.belowbar, color = color.new(color.aqua,    0), size = size.tiny)
+plotshape(debugMode and bearishSignalBar, title = "Bear SigBar",  style = shape.circle,        location = location.abovebar, color = color.new(color.orange,  0), size = size.tiny)
+plotshape(debugMode and bullishKeyBar,    title = "Bull KeyBar",  style = shape.square,         location = location.belowbar, color = color.new(color.yellow,  0), size = size.tiny)
+plotshape(debugMode and bearishKeyBar,    title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
+
+if warnTf and barstate.islast and timeframe.period != "1"
+    label.new(bar_index, high, "Recommended timeframe: 1 minute\n(current: " + timeframe.period + ")",
+         style = label.style_label_down, color = color.new(color.orange, 20), textcolor = color.black, size = size.small)
+
+// =====================================================================================
+// TRADE MANAGEMENT (Stop Loss / Take Profit)
+// =====================================================================================
+
+atrTrade = ta.atr(slAtrLen)
+
+longSL = slType == "ATR" ? close - atrTrade * slAtrMult : slType == "Points" ? close - slPoints : close * (1 - slPercent / 100)
+longRisk = close - longSL
+longTP = close + longRisk * rrRatio
+
+shortSL = slType == "ATR" ? close + atrTrade * slAtrMult : slType == "Points" ? close + slPoints : close * (1 + slPercent / 100)
+shortRisk = shortSL - close
+shortTP = close - shortRisk * rrRatio
+
+// =====================================================================================
+// ENTRIES + BUY / SELL LABELS
+// =====================================================================================
+
+if longSignal and strategy.position_size <= 0 and longRisk > 0
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop = longSL, limit = longTP)
+    if showLabels
+        label.new(bar_index, low, "BUY\n" + longSignalText, style = label.style_label_up,
+             color = buyColor, textcolor = color.white, size = size.small)
+
+if shortSignal and strategy.position_size >= 0 and shortRisk > 0
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop = shortSL, limit = shortTP)
+    if showLabels
+        label.new(bar_index, high, "SELL\n" + shortSignalText, style = label.style_label_down,
+             color = sellColor, textcolor = color.white, size = size.small)
+
+alertcondition(longSignal,  title = "Lexxie Buy Signal",  message = "Lexxie: Buy signal detected")
+alertcondition(shortSignal, title = "Lexxie Sell Signal", message = "Lexxie: Sell signal detected")
+
+// =====================================================================================
+// PERFORMANCE TRACKING (win rate, win/loss, daily win/loss, drawdown)
+// =====================================================================================
+
+var int   totalWins        = 0
+var int   totalLosses      = 0
+var int   dailyWins        = 0
+var int   dailyLosses      = 0
+var int   lastClosedTrades = 0
+var float peakEquity       = strategy.initial_capital
+var float maxDrawdownPct   = 0.0
+
+newDay = ta.change(time("D")) != 0
+if newDay
+    dailyWins   := 0
+    dailyLosses := 0
+
+if strategy.closedtrades > lastClosedTrades
+    for i = lastClosedTrades to strategy.closedtrades - 1
+        tradeProfit = strategy.closedtrades.profit(i)
+        if tradeProfit > 0
+            totalWins   += 1
+            dailyWins   += 1
+        else if tradeProfit < 0
+            totalLosses += 1
+            dailyLosses += 1
+    lastClosedTrades := strategy.closedtrades
+
+equityNow = strategy.equity
+if equityNow > peakEquity
+    peakEquity := equityNow
+drawdownNow = peakEquity > 0 ? (peakEquity - equityNow) / peakEquity * 100 : 0.0
+if drawdownNow > maxDrawdownPct
+    maxDrawdownPct := drawdownNow
+
+totalTrades = totalWins + totalLosses
+winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
+
+// =====================================================================================
+// STATS TABLE - top right corner (position configurable)
+// =====================================================================================
+
+var table statsTable = table.new(tablePos, 2, 7, border_width = 1, border_color = color.new(color.gray, 0), frame_color = color.new(color.gray, 0), frame_width = 1)
+
+if showTable and barstate.islast
+    table.cell(statsTable, 0, 0, "Lexxie Debug Stats", text_color = color.white, bgcolor = color.new(color.navy, 0), text_size = tableTextSize)
+    table.merge_cells(statsTable, 0, 0, 1, 0)
+
+    table.cell(statsTable, 0, 1, "Win Rate",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 1, str.tostring(winRate, "#.##") + "%", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+
+    table.cell(statsTable, 0, 2, "Wins",         text_size = tableTextSize)
+    table.cell(statsTable, 1, 2, str.tostring(totalWins), text_size = tableTextSize, text_color = color.green)
+
+    table.cell(statsTable, 0, 3, "Losses",       text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 3, str.tostring(totalLosses), text_size = tableTextSize, text_color = color.red, bgcolor = color.new(color.gray, 70))
+
+    table.cell(statsTable, 0, 4, "Daily Win",    text_size = tableTextSize)
+    table.cell(statsTable, 1, 4, str.tostring(dailyWins), text_size = tableTextSize, text_color = color.green)
+
+    table.cell(statsTable, 0, 5, "Daily Loss",   text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 5, str.tostring(dailyLosses), text_size = tableTextSize, text_color = color.red, bgcolor = color.new(color.gray, 70))
+
+    table.cell(statsTable, 0, 6, "Drawdown",     text_size = tableTextSize)
+    table.cell(statsTable, 1, 6, str.tostring(maxDrawdownPct, "#.##") + "%", text_size = tableTextSize, text_color = color.orange)
