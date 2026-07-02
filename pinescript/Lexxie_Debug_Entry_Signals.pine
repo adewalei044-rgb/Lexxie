@@ -241,7 +241,7 @@ winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
 // STATS TABLE - top right corner (position configurable)
 // =====================================================================================
 
-var table statsTable = table.new(tablePos, 2, 7, border_width = 1, border_color = color.new(color.gray, 0), frame_color = color.new(color.gray, 0), frame_width = 1)
+var table statsTable = table.new(tablePos, 2, 8, border_width = 1, border_color = color.new(color.gray, 0), frame_color = color.new(color.gray, 0), frame_width = 1)
 
 if showTable and barstate.islast
     table.cell(statsTable, 0, 0, "Lexxie Debug Stats", text_color = color.white, bgcolor = color.new(color.navy, 0), text_size = tableTextSize)
@@ -264,3 +264,6 @@ if showTable and barstate.islast
 
     table.cell(statsTable, 0, 6, "Drawdown",     text_size = tableTextSize)
     table.cell(statsTable, 1, 6, str.tostring(maxDrawdownPct, "#.##") + "%", text_size = tableTextSize, text_color = color.orange)
+
+    table.cell(statsTable, 0, 7, "Risk : Reward", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 7, "1 : " + str.tostring(rrRatio, "#.##"), text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
