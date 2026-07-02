@@ -49,7 +49,8 @@ slAtrLen    = input.int(14, "SL ATR Length", minval = 1, group = grpTrade)
 slAtrMult   = input.float(1.5, "SL ATR Multiplier", minval = 0.1, step = 0.1, group = grpTrade)
 slPoints    = input.float(10, "SL Points", minval = 0.0001, group = grpTrade)
 slPercent   = input.float(0.5, "SL Percent", minval = 0.01, step = 0.05, group = grpTrade)
-rrRatio     = input.float(2.0, "Reward : Risk Ratio", minval = 0.1, step = 0.1, group = grpTrade)
+rrRatio     = input.float(2.0, "Risk : Reward (1 : X)", minval = 0.1, step = 0.1, group = grpTrade,
+     tooltip = "Take-profit distance = Stop-loss distance x this value. Default 2.0 = risking 1 to make 2 (1:2).")
 
 grpDebug   = "Debug Mode"
 debugMode  = input.bool(true, "Enable Debug Mode (plot every detected pattern, even if not tradeable)", group = grpDebug)
