@@ -22,13 +22,19 @@ strategy("Lexxie - Debug Entry Signals (Engulfing / Signal Bar / Key Bar)",
 
 grpSignals   = "Entry Signal Types (choose which patterns can trigger trades)"
 useEngulfing = input.bool(true,  "Trade Engulfing Candle",        group = grpSignals)
-useSignalBar = input.bool(false, "Trade Signal Bar (Pin Bar)",    group = grpSignals)
-useKeyBar    = input.bool(false, "Trade Key Bar (Momentum Bar)",  group = grpSignals)
+useSignalBar = input.bool(false, "Trade Signal Bar (Pin Bar)",    group = grpSignals,
+     tooltip = "Off by default - pin bars are the noisiest of the three patterns on a 1-minute chart. Test it on its own before stacking it with the others.")
+useKeyBar    = input.bool(true,  "Trade Key Bar (Momentum Bar)",  group = grpSignals)
 allowLongs   = input.bool(true,  "Allow Long (Buy) Entries",      group = grpSignals)
 allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSignals)
 
+grpSession       = "Session Filter"
+useSessionFilter = input.bool(false, "Only Trade During Session Hours", group = grpSession,
+     tooltip = "Restricting entries to a liquid session window (e.g. market open) usually helps 1-minute signal quality more than tweaking pattern thresholds.")
+sessionHours     = input.session("0930-1130", "Session (Exchange Time)", group = grpSession)
+
 grpEngulf           = "Engulfing Candle Settings"
-engulfMinBodyRatio  = input.float(1.0, "Min Body Size vs Prev Body", minval = 0.5, step = 0.1, group = grpEngulf,
+engulfMinBodyRatio  = input.float(1.3, "Min Body Size vs Prev Body", minval = 0.5, step = 0.1, group = grpEngulf,
      tooltip = "Current candle's body must be at least this many times the size of the previous candle's body")
 
 grpSignalBar   = "Signal Bar (Pin Bar) Settings"
@@ -39,18 +45,18 @@ sigBarLookback  = input.int(5, "Prior Trend Lookback (bars)", minval = 1, group 
 
 grpKeyBar        = "Key Bar (Momentum Bar) Settings"
 keyBarAtrLen     = input.int(14, "ATR Length", minval = 1, group = grpKeyBar)
-keyBarRangeMult  = input.float(1.5, "Min Bar Range vs ATR", minval = 1.0, step = 0.1, group = grpKeyBar)
-keyBarCloseLoc   = input.float(0.25, "Max Close Distance From Extreme (% of range)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpKeyBar,
+keyBarRangeMult  = input.float(1.8, "Min Bar Range vs ATR", minval = 1.0, step = 0.1, group = grpKeyBar)
+keyBarCloseLoc   = input.float(0.20, "Max Close Distance From Extreme (% of range)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpKeyBar,
      tooltip = "How close the close must be to the bar's high (bullish) or low (bearish)")
 
 grpTrade    = "Trade Management"
 slType      = input.string("ATR", "Stop Loss Type", options = ["ATR", "Points", "Percent"], group = grpTrade)
 slAtrLen    = input.int(14, "SL ATR Length", minval = 1, group = grpTrade)
-slAtrMult   = input.float(1.5, "SL ATR Multiplier", minval = 0.1, step = 0.1, group = grpTrade)
+slAtrMult   = input.float(1.1, "SL ATR Multiplier", minval = 0.1, step = 0.1, group = grpTrade)
 slPoints    = input.float(10, "SL Points", minval = 0.0001, group = grpTrade)
 slPercent   = input.float(0.5, "SL Percent", minval = 0.01, step = 0.05, group = grpTrade)
-rrRatio     = input.float(2.0, "Risk : Reward (1 : X)", minval = 0.1, step = 0.1, group = grpTrade,
-     tooltip = "Take-profit distance = Stop-loss distance x this value. Default 2.0 = risking 1 to make 2 (1:2).")
+rrRatio     = input.float(1.5, "Risk : Reward (1 : X)", minval = 0.1, step = 0.1, group = grpTrade,
+     tooltip = "Take-profit distance = Stop-loss distance x this value. 1.5 = risking 1 to make 1.5. Raise toward 2.0 once you've confirmed the win rate holds up in the Strategy Tester.")
 
 grpDebug   = "Debug Mode"
 debugMode  = input.bool(true, "Enable Debug Mode (plot every detected pattern, even if not tradeable)", group = grpDebug)
@@ -112,8 +118,11 @@ bearishKeyBar = barRange >= atrKey * keyBarRangeMult and close < open and closeL
 longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar)
 shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar)
 
-longSignal  = allowLongs  and longPatternHit  and barConfirmed
-shortSignal = allowShorts and shortPatternHit and barConfirmed
+inSession  = not na(time(timeframe.period, sessionHours))
+sessionOk  = not useSessionFilter or inSession
+
+longSignal  = allowLongs  and longPatternHit  and barConfirmed and sessionOk
+shortSignal = allowShorts and shortPatternHit and barConfirmed and sessionOk
 
 f_buildSignalText(engulf, sigbar, keybar) =>
     txt = ""

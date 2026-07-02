@@ -22,6 +22,8 @@ combination of:
 - **Entry Signal Types** - checkboxes to choose which pattern(s) (Engulfing /
   Signal Bar / Key Bar) are allowed to trigger trades, plus separate toggles
   for allowing longs and/or shorts.
+- **Session Filter** - optional toggle to restrict entries to a chosen
+  exchange-time session window (e.g. `0930-1130`), off by default.
 - **Engulfing / Signal Bar / Key Bar Settings** - tunable thresholds (body
   ratio, wick ratio, ATR length/multiplier, close location, lookback) for
   each pattern.
@@ -45,16 +47,31 @@ combination of:
 
 ### No repainting
 
-The script is built so signals never repaint:
+The script is built so signals never repaint, while the stats table still
+updates live:
 
-- `calc_on_every_tick = false` and `process_orders_on_close = true` on the
-  `strategy()` declaration mean the script only recalculates and places
-  orders once a bar has actually closed, not on every intrabar price tick.
-- Every pattern check, debug plot, and trade condition is additionally
-  gated on `barstate.isconfirmed`, so nothing is evaluated, drawn, or traded
-  off a still-forming realtime bar. A BUY/SELL label or debug marker only
-  appears once, on a confirmed close, and never shifts or vanishes
-  afterward.
+- `calc_on_every_tick = true` lets the script recalculate on every price
+  tick, so the table and plots stay live instead of freezing until a bar
+  closes.
+- `process_orders_on_close = true` keeps order fills realistic (priced off
+  the bar's close, not an intrabar tick).
+- Every pattern check, debug plot, and trade condition is separately gated
+  on `barstate.isconfirmed`, so no signal, order, or marker is ever
+  evaluated, drawn, or traded off a still-forming realtime bar. A BUY/SELL
+  label or debug marker only appears once, on a confirmed close, and never
+  shifts or vanishes afterward.
+
+### Suggested starting settings
+
+The defaults are tuned as a reasonable starting point for reducing false
+signals on the noisy 1-minute timeframe (Engulfing + Key Bar enabled,
+Signal Bar off, tighter pattern thresholds, ATR stop x1.1, Risk:Reward
+1:1.5). This is **not a guaranteed winning configuration** - backtest it on
+your actual symbol in TradingView's Strategy Tester and adjust from there.
+Win rate alone doesn't imply profitability; watch the equity curve and
+drawdown together with it. The Session Filter (off by default) is often the
+single biggest lever for 1-minute signal quality - try restricting to your
+market's most liquid hours before over-tuning the pattern thresholds.
 
 ### Webhook automation
 
