@@ -425,53 +425,53 @@ if showTable and barstate.islast
     table.cell(statsTable, 0, 0, "Lexxie Debug Stats", text_color = color.white, bgcolor = color.new(color.navy, 0), text_size = tableTextSize)
     table.merge_cells(statsTable, 0, 0, 1, 0)
 
-    table.cell(statsTable, 0, 1, "Win Rate",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 1, "Win %",        text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
     table.cell(statsTable, 1, 1, str.tostring(winRate, "#.##") + "%", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 2, "Wins",         text_size = tableTextSize)
+    table.cell(statsTable, 0, 2, "Win",          text_size = tableTextSize)
     table.cell(statsTable, 1, 2, str.tostring(totalWins), text_size = tableTextSize, text_color = color.green)
 
-    table.cell(statsTable, 0, 3, "Losses",       text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 3, "Loss",         text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
     table.cell(statsTable, 1, 3, str.tostring(totalLosses), text_size = tableTextSize, text_color = color.red, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 4, "Daily Win",    text_size = tableTextSize)
+    table.cell(statsTable, 0, 4, "Day Win",      text_size = tableTextSize)
     table.cell(statsTable, 1, 4, str.tostring(dailyWins), text_size = tableTextSize, text_color = color.green)
 
-    table.cell(statsTable, 0, 5, "Daily Loss",   text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 5, "Day Loss",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
     table.cell(statsTable, 1, 5, str.tostring(dailyLosses), text_size = tableTextSize, text_color = color.red, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 6, "Drawdown",     text_size = tableTextSize)
+    table.cell(statsTable, 0, 6, "DD",           text_size = tableTextSize)
     table.cell(statsTable, 1, 6, str.tostring(maxDrawdownPct, "#.##") + "%", text_size = tableTextSize, text_color = color.orange)
 
-    table.cell(statsTable, 0, 7, "Risk : Reward", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
-    table.cell(statsTable, 1, 7, "1 : " + str.tostring(rrRatio, "#.##"), text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 7, "R:R",          text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 7, "1:" + str.tostring(rrRatio, "#.##"), text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
 
     worstDayText = na(worstDayPnL) ? "N/A" : "$" + str.tostring(worstDayPnL, "#.##") + " (" + worstDayDate + ")"
-    table.cell(statsTable, 0, 8, "Worst Day",   text_size = tableTextSize)
-    table.cell(statsTable, 1, 8, worstDayText,  text_size = tableTextSize, text_color = color.red)
+    table.cell(statsTable, 0, 8, "Wst Day",      text_size = tableTextSize)
+    table.cell(statsTable, 1, 8, worstDayText,   text_size = tableTextSize, text_color = color.red)
 
-    table.cell(statsTable, 0, 9, "Week Win",    text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 9, "Wk Win",       text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
     table.cell(statsTable, 1, 9, str.tostring(weekWins), text_size = tableTextSize, text_color = color.green, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 10, "Week Loss",  text_size = tableTextSize)
+    table.cell(statsTable, 0, 10, "Wk Loss",     text_size = tableTextSize)
     table.cell(statsTable, 1, 10, str.tostring(weekLosses), text_size = tableTextSize, text_color = color.red)
 
-    table.cell(statsTable, 0, 11, "Month Win",  text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 11, "MT Win",      text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
     table.cell(statsTable, 1, 11, str.tostring(monthWins), text_size = tableTextSize, text_color = color.green, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 12, "Month Loss", text_size = tableTextSize)
+    table.cell(statsTable, 0, 12, "MT Loss",     text_size = tableTextSize)
     table.cell(statsTable, 1, 12, str.tostring(monthLosses), text_size = tableTextSize, text_color = color.red)
 
-    table.cell(statsTable, 0, 13, "7-Week Win", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 13, "7Wk Win",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
     table.cell(statsTable, 1, 13, str.tostring(sevenWeekWins), text_size = tableTextSize, text_color = color.green, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 14, "7-Week Loss", text_size = tableTextSize)
+    table.cell(statsTable, 0, 14, "7Wk Loss",    text_size = tableTextSize)
     table.cell(statsTable, 1, 14, str.tostring(sevenWeekLosses), text_size = tableTextSize, text_color = color.red)
 
-    table.cell(statsTable, 0, 15, "Last Updated", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
-    table.cell(statsTable, 1, 15, lastUpdate, text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 15, "Updated",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 15, lastUpdate,    text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
 
-    rsiLevelText  = rsiValue >= rsiOverbought ? "Overbought" : rsiValue <= rsiOversold ? "Oversold" : "Neutral"
+    rsiLevelText  = rsiValue >= rsiOverbought ? "OB" : rsiValue <= rsiOversold ? "OS" : "Neutral"
     rsiLevelColor = rsiValue >= rsiOverbought ? color.red : rsiValue <= rsiOversold ? color.green : color.gray
     table.cell(statsTable, 0, 16, "RSI (" + str.tostring(rsiLen) + ")", text_size = tableTextSize)
     table.cell(statsTable, 1, 16, str.tostring(rsiValue, "#.##") + " " + rsiLevelText, text_size = tableTextSize, text_color = rsiLevelColor)
