@@ -343,10 +343,21 @@ shortTP = close - shortRisk * rrRatio
 // ENTRIES + BUY / SELL LABELS + SL/TP LINES
 // =====================================================================================
 
-var line  longSLLine  = na
-var line  longTPLine  = na
-var line  shortSLLine = na
-var line  shortTPLine = na
+var line  longSLLine     = na
+var line  longTPLine     = na
+var line  longEntryLine  = na
+var label longSLLabel    = na
+var label longTPLabel    = na
+var label longEntryLabel = na
+
+var line  shortSLLine     = na
+var line  shortTPLine     = na
+var line  shortEntryLine  = na
+var label shortSLLabel    = na
+var label shortTPLabel    = na
+var label shortEntryLabel = na
+
+entryLineColor = color.new(color.blue, 0)
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
     longAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -364,10 +375,16 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
         if not na(longSLLine)
             line.delete(longSLLine)
             line.delete(longTPLine)
-        longSLLine := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor, style = line.style_dashed, width = 1)
-        longTPLine := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
-        label.new(bar_index, longSL, "SL " + str.tostring(longSL), style = label.style_label_right, color = color.new(color.white, 100), textcolor = slLineColor, size = size.tiny)
-        label.new(bar_index, longTP, "TP " + str.tostring(longTP), style = label.style_label_right, color = color.new(color.white, 100), textcolor = tpLineColor, size = size.tiny)
+            line.delete(longEntryLine)
+            label.delete(longSLLabel)
+            label.delete(longTPLabel)
+            label.delete(longEntryLabel)
+        longSLLine     := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor, style = line.style_dashed, width = 1)
+        longTPLine     := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
+        longEntryLine  := line.new(bar_index, close, bar_index, close, color = entryLineColor, style = line.style_dashed, width = 1)
+        longSLLabel    := label.new(bar_index, longSL, "SL: "    + str.tostring(longSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
+        longTPLabel    := label.new(bar_index, longTP, "TP: "    + str.tostring(longTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
+        longEntryLabel := label.new(bar_index, close,  "Entry: " + str.tostring(close,  format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
 
 if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     shortAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -385,18 +402,32 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
         if not na(shortSLLine)
             line.delete(shortSLLine)
             line.delete(shortTPLine)
-        shortSLLine := line.new(bar_index, shortSL, bar_index, shortSL, color = slLineColor, style = line.style_dashed, width = 1)
-        shortTPLine := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
-        label.new(bar_index, shortSL, "SL " + str.tostring(shortSL), style = label.style_label_right, color = color.new(color.white, 100), textcolor = slLineColor, size = size.tiny)
-        label.new(bar_index, shortTP, "TP " + str.tostring(shortTP), style = label.style_label_right, color = color.new(color.white, 100), textcolor = tpLineColor, size = size.tiny)
+            line.delete(shortEntryLine)
+            label.delete(shortSLLabel)
+            label.delete(shortTPLabel)
+            label.delete(shortEntryLabel)
+        shortSLLine     := line.new(bar_index, shortSL, bar_index, shortSL, color = slLineColor, style = line.style_dashed, width = 1)
+        shortTPLine     := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
+        shortEntryLine  := line.new(bar_index, close,   bar_index, close,   color = entryLineColor, style = line.style_dashed, width = 1)
+        shortSLLabel    := label.new(bar_index, shortSL, "SL: "    + str.tostring(shortSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
+        shortTPLabel    := label.new(bar_index, shortTP, "TP: "    + str.tostring(shortTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
+        shortEntryLabel := label.new(bar_index, close,   "Entry: " + str.tostring(close,   format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
 
-// Extend the active trade's SL/TP lines to follow price until the position closes
+// Extend the active trade's SL/TP/Entry lines and labels to follow price until the position closes
 if showSLTPLines and strategy.position_size > 0 and not na(longSLLine)
     line.set_x2(longSLLine, bar_index)
     line.set_x2(longTPLine, bar_index)
+    line.set_x2(longEntryLine, bar_index)
+    label.set_x(longSLLabel, bar_index)
+    label.set_x(longTPLabel, bar_index)
+    label.set_x(longEntryLabel, bar_index)
 if showSLTPLines and strategy.position_size < 0 and not na(shortSLLine)
     line.set_x2(shortSLLine, bar_index)
     line.set_x2(shortTPLine, bar_index)
+    line.set_x2(shortEntryLine, bar_index)
+    label.set_x(shortSLLabel, bar_index)
+    label.set_x(shortTPLabel, bar_index)
+    label.set_x(shortEntryLabel, bar_index)
 
 alertcondition(longSignal,  title = "Lexxie Buy Signal",  message = "Lexxie: Buy signal detected")
 alertcondition(shortSignal, title = "Lexxie Sell Signal", message = "Lexxie: Sell signal detected")
