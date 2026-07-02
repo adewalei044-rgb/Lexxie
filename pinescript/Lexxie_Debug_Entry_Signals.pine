@@ -25,6 +25,10 @@ useEngulfing = input.bool(true,  "Trade Engulfing Candle",        group = grpSig
 useSignalBar = input.bool(false, "Trade Signal Bar (Pin Bar)",    group = grpSignals,
      tooltip = "Off by default - pin bars are the noisiest of the three patterns on a 1-minute chart. Test it on its own before stacking it with the others.")
 useKeyBar    = input.bool(true,  "Trade Key Bar (Momentum Bar)",  group = grpSignals)
+useDemandSupply  = input.bool(false, "Trade Demand/Supply Zones", group = grpSignals,
+     tooltip = "Enters when price first touches an active zone (uses the thresholds/colors from the Demand/Supply Zones group below).")
+useRsiDivergence = input.bool(false, "Trade RSI Divergence", group = grpSignals,
+     tooltip = "Enters on a confirmed bullish/bearish RSI divergence (uses the settings from the RSI group below).")
 allowLongs   = input.bool(true,  "Allow Long (Buy) Entries",      group = grpSignals)
 allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSignals)
 
@@ -35,7 +39,7 @@ sessionHours     = input.session("0930-1130", "Session (Exchange Time)", group =
 
 grpZones      = "Demand / Supply Zones"
 showZones     = input.bool(false, "Show Demand/Supply Zones", group = grpZones,
-     tooltip = "Visual only - draws a zone box on the base candle right before a strong breakout bar. Does not affect trading.")
+     tooltip = "Draws a zone box on the base candle right before a strong breakout bar. Zones are still tracked internally for trading even if this is off - this only controls whether they're drawn.")
 zoneRangeMult = input.float(1.5, "Zone Breakout Min Range vs ATR", minval = 1.0, step = 0.1, group = grpZones)
 zoneMaxCount  = input.int(5, "Max Zones Shown (per side)", minval = 1, maxval = 20, group = grpZones)
 demandColor   = input.color(color.new(color.green, 85), "Demand Zone Color", group = grpZones)
@@ -48,7 +52,7 @@ showRsiLevels     = input.bool(false, "Show Normal RSI Overbought/Oversold Level
 rsiOverbought     = input.int(70, "RSI Overbought Level", minval = 50, maxval = 100, group = grpRSI)
 rsiOversold       = input.int(30, "RSI Oversold Level", minval = 0, maxval = 50, group = grpRSI)
 showRsiDivergence = input.bool(false, "Show RSI Divergence", group = grpRSI,
-     tooltip = "Visual only - marks regular bullish/bearish divergence between price and RSI pivots. Does not affect trading.")
+     tooltip = "Draws the divergence marker on the chart. Divergence is still detected internally for trading even if this is off - this only controls whether it's drawn.")
 rsiDivLeft        = input.int(5, "Divergence Pivot Left Bars", minval = 1, group = grpRSI)
 rsiDivRight       = input.int(5, "Divergence Pivot Right Bars", minval = 1, group = grpRSI)
 
@@ -135,67 +139,37 @@ bullishKeyBar = barRange >= atrKey * keyBarRangeMult and close > open and closeL
 bearishKeyBar = barRange >= atrKey * keyBarRangeMult and close < open and closeLocBear <= keyBarCloseLoc
 
 // =====================================================================================
-// SIGNAL COMBINATION
-// =====================================================================================
-
-longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar)
-shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar)
-
-inSession  = not na(time(timeframe.period, sessionHours))
-sessionOk  = not useSessionFilter or inSession
-
-longSignal  = allowLongs  and longPatternHit  and barConfirmed and sessionOk
-shortSignal = allowShorts and shortPatternHit and barConfirmed and sessionOk
-
-f_buildSignalText(engulf, sigbar, keybar) =>
-    txt = ""
-    if engulf
-        txt := txt + "Engulf"
-    if sigbar
-        txt := txt + (txt == "" ? "" : "+") + "SigBar"
-    if keybar
-        txt := txt + (txt == "" ? "" : "+") + "KeyBar"
-    txt
-
-longSignalText  = f_buildSignalText(useEngulfing and bullishEngulf, useSignalBar and bullishSignalBar, useKeyBar and bullishKeyBar)
-shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar and bearishSignalBar, useKeyBar and bearishKeyBar)
-
-// =====================================================================================
-// DEBUG PLOTS - shows every raw pattern detected, whether or not it's enabled for trading
-// =====================================================================================
-
-plotshape(debugMode and bullishEngulf    and barConfirmed, title = "Bull Engulf",  style = shape.triangleup,   location = location.belowbar, color = color.new(color.lime,     0), size = size.tiny)
-plotshape(debugMode and bearishEngulf    and barConfirmed, title = "Bear Engulf",  style = shape.triangledown, location = location.abovebar, color = color.new(color.red,     0), size = size.tiny)
-plotshape(debugMode and bullishSignalBar and barConfirmed, title = "Bull SigBar",  style = shape.circle,        location = location.belowbar, color = color.new(color.aqua,    0), size = size.tiny)
-plotshape(debugMode and bearishSignalBar and barConfirmed, title = "Bear SigBar",  style = shape.circle,        location = location.abovebar, color = color.new(color.orange,  0), size = size.tiny)
-plotshape(debugMode and bullishKeyBar    and barConfirmed, title = "Bull KeyBar",  style = shape.square,         location = location.belowbar, color = color.new(color.yellow,  0), size = size.tiny)
-plotshape(debugMode and bearishKeyBar    and barConfirmed, title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
-
-// =====================================================================================
-// DEMAND / SUPPLY ZONES - visual only, does not affect trading
+// DEMAND / SUPPLY ZONES - tracked internally for trading; showZones only controls drawing
 // =====================================================================================
 
 var array<box> demandZones = array.new<box>()
 var array<box> supplyZones = array.new<box>()
 
+demandDrawColor   = showZones ? demandColor : color.new(demandColor, 100)
+supplyDrawColor   = showZones ? supplyColor : color.new(supplyColor, 100)
+demandBorderColor = showZones ? color.new(color.green, 40) : color.new(color.green, 100)
+supplyBorderColor = showZones ? color.new(color.red, 40)   : color.new(color.red, 100)
+
+zonesActive = showZones or useDemandSupply
+
 strongBullMove = barConfirmed and barRange >= atrKey * zoneRangeMult and close > open
 strongBearMove = barConfirmed and barRange >= atrKey * zoneRangeMult and close < open
 
-if showZones and strongBullMove
+if zonesActive and strongBullMove
     demandBox = box.new(left = bar_index - 1, top = high[1], bottom = low[1], right = bar_index,
-         bgcolor = demandColor, border_color = color.new(color.green, 40), extend = extend.none)
+         bgcolor = demandDrawColor, border_color = demandBorderColor, extend = extend.none)
     array.push(demandZones, demandBox)
     if array.size(demandZones) > zoneMaxCount
         box.delete(array.shift(demandZones))
 
-if showZones and strongBearMove
+if zonesActive and strongBearMove
     supplyBox = box.new(left = bar_index - 1, top = high[1], bottom = low[1], right = bar_index,
-         bgcolor = supplyColor, border_color = color.new(color.red, 40), extend = extend.none)
+         bgcolor = supplyDrawColor, border_color = supplyBorderColor, extend = extend.none)
     array.push(supplyZones, supplyBox)
     if array.size(supplyZones) > zoneMaxCount
         box.delete(array.shift(supplyZones))
 
-if showZones and barConfirmed
+if zonesActive and barConfirmed
     if array.size(demandZones) > 0
         for i = array.size(demandZones) - 1 to 0
             zBox = array.get(demandZones, i)
@@ -213,8 +187,27 @@ if showZones and barConfirmed
             else
                 box.set_right(zBox, bar_index)
 
+// Zone-touch detection for trading - fires once when price first enters a zone
+inDemandZone = false
+if array.size(demandZones) > 0
+    for i = 0 to array.size(demandZones) - 1
+        zBox = array.get(demandZones, i)
+        if close <= box.get_top(zBox) and close >= box.get_bottom(zBox)
+            inDemandZone := true
+
+inSupplyZone = false
+if array.size(supplyZones) > 0
+    for i = 0 to array.size(supplyZones) - 1
+        zBox = array.get(supplyZones, i)
+        if close <= box.get_top(zBox) and close >= box.get_bottom(zBox)
+            inSupplyZone := true
+
+enterDemandZone = barConfirmed and inDemandZone and not nz(inDemandZone[1])
+enterSupplyZone = barConfirmed and inSupplyZone and not nz(inSupplyZone[1])
+
 // =====================================================================================
-// RSI - overbought/oversold levels + divergence, visual only, does not affect trading
+// RSI - overbought/oversold levels + divergence, tracked internally for trading;
+// showRsiLevels/showRsiDivergence only control drawing
 // =====================================================================================
 
 rsiValue = ta.rsi(close, rsiLen)
@@ -252,6 +245,47 @@ if barConfirmed and not na(rsiPivotHigh)
 
 plotshape(showRsiDivergence and bullishRsiDiv, title = "Bullish RSI Divergence", style = shape.labelup,   location = location.belowbar, color = color.new(color.blue, 0),   textcolor = color.white, text = "Bull Div", size = size.small, offset = -rsiDivRight)
 plotshape(showRsiDivergence and bearishRsiDiv, title = "Bearish RSI Divergence", style = shape.labeldown, location = location.abovebar, color = color.new(color.purple, 0), textcolor = color.white, text = "Bear Div", size = size.small, offset = -rsiDivRight)
+
+// =====================================================================================
+// SIGNAL COMBINATION
+// =====================================================================================
+
+longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar) or (useDemandSupply and enterDemandZone) or (useRsiDivergence and bullishRsiDiv)
+shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar) or (useDemandSupply and enterSupplyZone) or (useRsiDivergence and bearishRsiDiv)
+
+inSession  = not na(time(timeframe.period, sessionHours))
+sessionOk  = not useSessionFilter or inSession
+
+longSignal  = allowLongs  and longPatternHit  and barConfirmed and sessionOk
+shortSignal = allowShorts and shortPatternHit and barConfirmed and sessionOk
+
+f_buildSignalText(engulf, sigbar, keybar, zone, rsidiv) =>
+    txt = ""
+    if engulf
+        txt := txt + "Engulf"
+    if sigbar
+        txt := txt + (txt == "" ? "" : "+") + "SigBar"
+    if keybar
+        txt := txt + (txt == "" ? "" : "+") + "KeyBar"
+    if zone
+        txt := txt + (txt == "" ? "" : "+") + "Zone"
+    if rsidiv
+        txt := txt + (txt == "" ? "" : "+") + "RSIdiv"
+    txt
+
+longSignalText  = f_buildSignalText(useEngulfing and bullishEngulf, useSignalBar and bullishSignalBar, useKeyBar and bullishKeyBar, useDemandSupply and enterDemandZone, useRsiDivergence and bullishRsiDiv)
+shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar and bearishSignalBar, useKeyBar and bearishKeyBar, useDemandSupply and enterSupplyZone, useRsiDivergence and bearishRsiDiv)
+
+// =====================================================================================
+// DEBUG PLOTS - shows every raw pattern detected, whether or not it's enabled for trading
+// =====================================================================================
+
+plotshape(debugMode and bullishEngulf    and barConfirmed, title = "Bull Engulf",  style = shape.triangleup,   location = location.belowbar, color = color.new(color.lime,     0), size = size.tiny)
+plotshape(debugMode and bearishEngulf    and barConfirmed, title = "Bear Engulf",  style = shape.triangledown, location = location.abovebar, color = color.new(color.red,     0), size = size.tiny)
+plotshape(debugMode and bullishSignalBar and barConfirmed, title = "Bull SigBar",  style = shape.circle,        location = location.belowbar, color = color.new(color.aqua,    0), size = size.tiny)
+plotshape(debugMode and bearishSignalBar and barConfirmed, title = "Bear SigBar",  style = shape.circle,        location = location.abovebar, color = color.new(color.orange,  0), size = size.tiny)
+plotshape(debugMode and bullishKeyBar    and barConfirmed, title = "Bull KeyBar",  style = shape.square,         location = location.belowbar, color = color.new(color.yellow,  0), size = size.tiny)
+plotshape(debugMode and bearishKeyBar    and barConfirmed, title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
 
 // =====================================================================================
 // TRADE MANAGEMENT (Stop Loss / Take Profit)
