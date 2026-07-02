@@ -105,12 +105,13 @@ sellColor    = input.color(color.new(color.red, 0),   "Sell Label Color", group 
 labelTextSize = input.string(size.tiny, "Buy/Sell Label Size",
      options = [size.tiny, size.small, size.normal, size.large], group = grpLabels)
 
-grpSLTP       = "Stop Loss / Take Profit Lines"
-showSLTPLines = input.bool(true, "Show SL/TP Lines", group = grpSLTP)
+grpSLTP       = "Take Profit Tag / Zone Box"
+showSLTPLines = input.bool(true, "Show TP Tag", group = grpSLTP,
+     tooltip = "Simple 'TP' tag riding the take-profit level, nothing else - no SL or Entry line/label clutter.")
 showSLTPZones = input.bool(true, "Show Profit/Loss Zone Boxes", group = grpSLTP,
-     tooltip = "Independent of the lines above - shows/hides the shaded green (profit) and red (loss) zone boxes between entry and TP/SL.")
-slLineColor   = input.color(color.new(color.red, 0),  "Stop Loss Line Color", group = grpSLTP)
-tpLineColor   = input.color(color.new(color.teal, 0), "Take Profit Line Color", group = grpSLTP)
+     tooltip = "Independent of the tag above - shows/hides the shaded green (profit) and red (loss) zone boxes between entry and TP/SL.")
+slLineColor   = input.color(color.new(color.red, 0),  "Loss Zone Color", group = grpSLTP)
+tpLineColor   = input.color(color.new(color.teal, 0), "TP Tag / Profit Zone Color", group = grpSLTP)
 
 grpWebhook       = "Webhook / Alerts"
 useWebhookAlerts = input.bool(false, "Fire alert() on entries (for webhook automation)", group = grpWebhook,
@@ -374,36 +375,24 @@ shortTP = close - shortRisk * rrRatio
 // ENTRIES + BUY / SELL LABELS + SL/TP LINES
 // =====================================================================================
 
-// Only the current/latest trade's flags and drawings are kept on the chart - each new
-// entry deletes the previous trade's marker/lines/labels/boxes first, so the chart never
-// accumulates dozens of overlapping flags from every historical trade.
-var line  curSLLine      = na
+// Only the current/latest trade's flag and drawing are kept on the chart - each new entry
+// deletes the previous trade's marker/tag/box first, so the chart never accumulates dozens
+// of overlapping flags from every historical trade. Kept deliberately simple: just the
+// BUY/SELL flag, a "TP" tag, and the shaded profit/loss zone box - no SL or Entry line/label.
 var line  curTPLine      = na
-var line  curEntryLine   = na
-var label curSLLabel     = na
 var label curTPLabel     = na
-var label curEntryLabel  = na
 var label curEntryMarker = na
 var box   curProfitBox   = na
 var box   curLossBox     = na
 
-entryLineColor  = color.new(color.blue, 0)
 profitBoxColor  = color.new(tpLineColor, 85)
 lossBoxColor    = color.new(slLineColor, 85)
 
 f_deleteCurrentDrawings() =>
-    if not na(curSLLine)
-        line.delete(curSLLine)
     if not na(curTPLine)
         line.delete(curTPLine)
-    if not na(curEntryLine)
-        line.delete(curEntryLine)
-    if not na(curSLLabel)
-        label.delete(curSLLabel)
     if not na(curTPLabel)
         label.delete(curTPLabel)
-    if not na(curEntryLabel)
-        label.delete(curEntryLabel)
     if not na(curEntryMarker)
         label.delete(curEntryMarker)
     if not na(curProfitBox)
@@ -425,12 +414,8 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
     if useWebhookAlerts
         alert(longAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
-        curSLLine     := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor, style = line.style_dashed, width = 1)
-        curTPLine     := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
-        curEntryLine  := line.new(bar_index, close, bar_index, close, color = entryLineColor, style = line.style_dashed, width = 1)
-        curSLLabel    := label.new(bar_index, longSL, "SL: "    + str.tostring(longSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
-        curTPLabel    := label.new(bar_index, longTP, "TP: "    + str.tostring(longTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
-        curEntryLabel := label.new(bar_index, close,  "Entry: " + str.tostring(close,  format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
+        curTPLine  := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
+        curTPLabel := label.new(bar_index, longTP, "TP", style = label.style_label_left, color = tpLineColor, textcolor = color.white, size = size.small)
     if showSLTPZones
         curProfitBox := box.new(left = bar_index, top = longTP, right = bar_index, bottom = close, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
         curLossBox   := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
@@ -449,27 +434,17 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     if useWebhookAlerts
         alert(shortAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
-        curSLLine     := line.new(bar_index, shortSL, bar_index, shortSL, color = slLineColor, style = line.style_dashed, width = 1)
-        curTPLine     := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
-        curEntryLine  := line.new(bar_index, close,   bar_index, close,   color = entryLineColor, style = line.style_dashed, width = 1)
-        curSLLabel    := label.new(bar_index, shortSL, "SL: "    + str.tostring(shortSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
-        curTPLabel    := label.new(bar_index, shortTP, "TP: "    + str.tostring(shortTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
-        curEntryLabel := label.new(bar_index, close,   "Entry: " + str.tostring(close,   format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
+        curTPLine  := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
+        curTPLabel := label.new(bar_index, shortTP, "TP", style = label.style_label_left, color = tpLineColor, textcolor = color.white, size = size.small)
     if showSLTPZones
         curProfitBox := box.new(left = bar_index, top = close,    right = bar_index, bottom = shortTP, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
         curLossBox   := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
-// Extend the active trade's SL/TP/Entry lines, zone box, and price tags to follow the
-// current bar until the position closes - matching TradingView's native long/short
-// position tool, where the SL/Entry/TP tags ride the leading edge. Only the BUY/SELL
-// entry marker label stays fixed at the entry bar.
-if showSLTPLines and strategy.position_size != 0 and not na(curSLLine)
-    line.set_x2(curSLLine, bar_index)
+// Extend the active trade's TP tag and zone box to follow the current bar until the
+// position closes. Only the BUY/SELL entry marker label stays fixed at the entry bar.
+if showSLTPLines and strategy.position_size != 0 and not na(curTPLine)
     line.set_x2(curTPLine, bar_index)
-    line.set_x2(curEntryLine, bar_index)
-    label.set_x(curSLLabel, bar_index)
     label.set_x(curTPLabel, bar_index)
-    label.set_x(curEntryLabel, bar_index)
 if showSLTPZones and strategy.position_size != 0 and not na(curProfitBox)
     box.set_right(curProfitBox, bar_index)
     box.set_right(curLossBox, bar_index)
