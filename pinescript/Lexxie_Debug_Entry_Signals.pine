@@ -29,6 +29,8 @@ useDemandSupply  = input.bool(false, "Trade Demand/Supply Zones", group = grpSig
      tooltip = "Enters when price first touches an active zone (uses the thresholds/colors from the Demand/Supply Zones group below).")
 useRsiDivergence = input.bool(false, "Trade RSI Divergence", group = grpSignals,
      tooltip = "Enters on a confirmed bullish/bearish RSI divergence (uses the settings from the RSI group below).")
+useRsiLevels     = input.bool(false, "Trade Normal RSI Levels", group = grpSignals,
+     tooltip = "Long when RSI crosses into oversold, short when RSI crosses into overbought (uses the levels from the RSI group below).")
 allowLongs   = input.bool(true,  "Allow Long (Buy) Entries",      group = grpSignals)
 allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSignals)
 
@@ -48,7 +50,7 @@ supplyColor   = input.color(color.new(color.red, 85),   "Supply Zone Color", gro
 grpRSI            = "RSI"
 rsiLen            = input.int(14, "RSI Length", minval = 1, group = grpRSI)
 showRsiLevels     = input.bool(false, "Show Normal RSI Overbought/Oversold Levels", group = grpRSI,
-     tooltip = "Visual only - marks the bar where RSI crosses into overbought/oversold. Does not affect trading.")
+     tooltip = "Draws a marker on the bar where RSI crosses into overbought/oversold. Detection is still active for trading even if this is off - this only controls whether it's drawn.")
 rsiOverbought     = input.int(70, "RSI Overbought Level", minval = 50, maxval = 100, group = grpRSI)
 rsiOversold       = input.int(30, "RSI Oversold Level", minval = 0, maxval = 50, group = grpRSI)
 showRsiDivergence = input.bool(false, "Show RSI Divergence", group = grpRSI,
@@ -250,8 +252,8 @@ plotshape(showRsiDivergence and bearishRsiDiv, title = "Bearish RSI Divergence",
 // SIGNAL COMBINATION
 // =====================================================================================
 
-longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar) or (useDemandSupply and enterDemandZone) or (useRsiDivergence and bullishRsiDiv)
-shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar) or (useDemandSupply and enterSupplyZone) or (useRsiDivergence and bearishRsiDiv)
+longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar) or (useDemandSupply and enterDemandZone) or (useRsiDivergence and bullishRsiDiv) or (useRsiLevels and enterOversold)
+shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar) or (useDemandSupply and enterSupplyZone) or (useRsiDivergence and bearishRsiDiv) or (useRsiLevels and enterOverbought)
 
 inSession  = not na(time(timeframe.period, sessionHours))
 sessionOk  = not useSessionFilter or inSession
@@ -259,7 +261,7 @@ sessionOk  = not useSessionFilter or inSession
 longSignal  = allowLongs  and longPatternHit  and barConfirmed and sessionOk
 shortSignal = allowShorts and shortPatternHit and barConfirmed and sessionOk
 
-f_buildSignalText(engulf, sigbar, keybar, zone, rsidiv) =>
+f_buildSignalText(engulf, sigbar, keybar, zone, rsidiv, rsilvl) =>
     txt = ""
     if engulf
         txt := txt + "Engulf"
@@ -271,10 +273,12 @@ f_buildSignalText(engulf, sigbar, keybar, zone, rsidiv) =>
         txt := txt + (txt == "" ? "" : "+") + "Zone"
     if rsidiv
         txt := txt + (txt == "" ? "" : "+") + "RSIdiv"
+    if rsilvl
+        txt := txt + (txt == "" ? "" : "+") + "RSILvl"
     txt
 
-longSignalText  = f_buildSignalText(useEngulfing and bullishEngulf, useSignalBar and bullishSignalBar, useKeyBar and bullishKeyBar, useDemandSupply and enterDemandZone, useRsiDivergence and bullishRsiDiv)
-shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar and bearishSignalBar, useKeyBar and bearishKeyBar, useDemandSupply and enterSupplyZone, useRsiDivergence and bearishRsiDiv)
+longSignalText  = f_buildSignalText(useEngulfing and bullishEngulf, useSignalBar and bullishSignalBar, useKeyBar and bullishKeyBar, useDemandSupply and enterDemandZone, useRsiDivergence and bullishRsiDiv, useRsiLevels and enterOversold)
+shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar and bearishSignalBar, useKeyBar and bearishKeyBar, useDemandSupply and enterSupplyZone, useRsiDivergence and bearishRsiDiv, useRsiLevels and enterOverbought)
 
 // =====================================================================================
 // DEBUG PLOTS - shows every raw pattern detected, whether or not it's enabled for trading
