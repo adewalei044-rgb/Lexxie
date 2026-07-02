@@ -380,13 +380,6 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
     if useWebhookAlerts
         alert(longAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
-        if not na(longSLLine)
-            line.delete(longSLLine)
-            line.delete(longTPLine)
-            line.delete(longEntryLine)
-            label.delete(longSLLabel)
-            label.delete(longTPLabel)
-            label.delete(longEntryLabel)
         longSLLine     := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor, style = line.style_dashed, width = 1)
         longTPLine     := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
         longEntryLine  := line.new(bar_index, close, bar_index, close, color = entryLineColor, style = line.style_dashed, width = 1)
@@ -394,9 +387,6 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
         longTPLabel    := label.new(bar_index, longTP, "TP: "    + str.tostring(longTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
         longEntryLabel := label.new(bar_index, close,  "Entry: " + str.tostring(close,  format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
     if showSLTPZones
-        if not na(longProfitBox)
-            box.delete(longProfitBox)
-            box.delete(longLossBox)
         longProfitBox := box.new(left = bar_index, top = longTP, right = bar_index, bottom = close, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
         longLossBox   := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
@@ -413,13 +403,6 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     if useWebhookAlerts
         alert(shortAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
-        if not na(shortSLLine)
-            line.delete(shortSLLine)
-            line.delete(shortTPLine)
-            line.delete(shortEntryLine)
-            label.delete(shortSLLabel)
-            label.delete(shortTPLabel)
-            label.delete(shortEntryLabel)
         shortSLLine     := line.new(bar_index, shortSL, bar_index, shortSL, color = slLineColor, style = line.style_dashed, width = 1)
         shortTPLine     := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
         shortEntryLine  := line.new(bar_index, close,   bar_index, close,   color = entryLineColor, style = line.style_dashed, width = 1)
@@ -427,9 +410,6 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
         shortTPLabel    := label.new(bar_index, shortTP, "TP: "    + str.tostring(shortTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
         shortEntryLabel := label.new(bar_index, close,   "Entry: " + str.tostring(close,   format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
     if showSLTPZones
-        if not na(shortProfitBox)
-            box.delete(shortProfitBox)
-            box.delete(shortLossBox)
         shortProfitBox := box.new(left = bar_index, top = close,    right = bar_index, bottom = shortTP, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
         shortLossBox   := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
