@@ -75,7 +75,7 @@ engulfMinBodyRatio  = input.float(1.3, "Min Body Size vs Prev Body", minval = 0.
 grpSignalBar   = "Signal Bar (Pin Bar) Settings"
 sigBarWickRatio = input.float(2.0, "Min Wick-to-Body Ratio", minval = 1.0, step = 0.1, group = grpSignalBar,
      tooltip = "Rejection wick must be at least this many times the candle body")
-sigBarLookback  = input.int(5, "Prior Trend Lookback (bars)", minval = 1, group = grpSignalBar,
+sigBarLookback  = input.int(5, "Prior Trend Lookback (bars)", minval = 1, maxval = 400, group = grpSignalBar,
      tooltip = "Number of bars used to confirm a prior directional move before the signal bar")
 
 grpKeyBar        = "Key Bar (Momentum Bar) Settings"
@@ -222,8 +222,13 @@ var bool prevInSupplyZone = false
 enterDemandZone = barConfirmed and inDemandZone and not prevInDemandZone
 enterSupplyZone = barConfirmed and inSupplyZone and not prevInSupplyZone
 
-prevInDemandZone := inDemandZone
-prevInSupplyZone := inSupplyZone
+// Only latch the "previous" state once a bar is confirmed - otherwise, with
+// calc_on_every_tick=true, this would get overwritten by the current bar's own
+// in-progress ticks before it closes, comparing the bar to itself instead of
+// to the true prior confirmed bar.
+if barConfirmed
+    prevInDemandZone := inDemandZone
+    prevInSupplyZone := inSupplyZone
 
 // =====================================================================================
 // RSI - overbought/oversold levels + divergence, tracked internally for trading;
@@ -454,13 +459,26 @@ var string worstDayDate     = "-"
 var string dayLabel         = ""
 var array<float>  last30PnL   = array.new<float>()
 var array<string> last30Dates = array.new<string>()
+var int lastProcessedDay   = na
+var int lastProcessedWeek  = na
+var int lastProcessedMonth = na
 
 today      = str.format_time(time, "MM/dd")
 lastUpdate = str.format_time(time, "MM/dd HH:mm")
 
-newDay   = ta.change(time("D")) != 0
-newWeek  = ta.change(time("W")) != 0
-newMonth = ta.change(time("M")) != 0
+dayTime   = time("D")
+weekTime  = time("W")
+monthTime = time("M")
+
+// Guards on the actual day/week/month value having changed since it was last
+// processed, not just "did it change vs the previous bar" - ta.change() alone
+// would stay true for every tick of the whole first bar of a new period (since
+// calc_on_every_tick=true and time() is constant within a bar), which would
+// re-run these resets on every tick and could wipe out a win/loss that was
+// just recorded moments earlier in the same bar.
+newDay   = na(lastProcessedDay)   or dayTime   != lastProcessedDay
+newWeek  = na(lastProcessedWeek)  or weekTime  != lastProcessedWeek
+newMonth = na(lastProcessedMonth) or monthTime != lastProcessedMonth
 
 if newDay
     if na(worstDayPnL) or dailyPnL < worstDayPnL
@@ -474,16 +492,19 @@ if newDay
     dailyWins   := 0
     dailyLosses := 0
     dailyPnL    := 0.0
+    lastProcessedDay := dayTime
 
 dayLabel := today
 
 if newWeek
     weekWins   := 0
     weekLosses := 0
+    lastProcessedWeek := weekTime
 
 if newMonth
     monthWins   := 0
     monthLosses := 0
+    lastProcessedMonth := monthTime
 
 if strategy.closedtrades > lastClosedTrades
     for i = lastClosedTrades to strategy.closedtrades - 1
