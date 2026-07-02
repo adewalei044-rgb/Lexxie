@@ -34,11 +34,15 @@ useRsiLevels     = input.bool(false, "Trade Normal RSI Levels", group = grpSigna
 allowLongs   = input.bool(true,  "Allow Long (Buy) Entries",      group = grpSignals)
 allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSignals)
 
-grpConfluence      = "Confluence Mode"
-useConfluence      = input.bool(false, "Require Multiple Signals To Agree (Confluence)", group = grpConfluence,
-     tooltip = "Off (default) = OR logic, trades on any single enabled signal above. On = AND-style logic, only trades when at least 'Min Signals Required' of the enabled signals fire on the same bar, in the same direction.")
-confluenceMinCount = input.int(2, "Min Signals Required", minval = 2, maxval = 6, group = grpConfluence,
-     tooltip = "How many of the checked Entry Signal Types must agree on the same bar before a trade fires. Only used when Confluence Mode is on.")
+grpCombo = "Combo (Confluence) - separate from Entry Signal Types above"
+comboEnable = input.bool(false, "Enable Combo Signal", group = grpCombo,
+     tooltip = "This whole group is independent of Entry Signal Types above - it runs alongside it, not instead of it. Tick 2 or more boxes below and a trade only fires when ALL of the ticked ones agree on the same bar, same direction.")
+comboUseRsiLevels     = input.bool(false, "Combo: RSI Level (OB/OS)",     group = grpCombo)
+comboUseRsiDivergence = input.bool(false, "Combo: RSI Divergence",       group = grpCombo)
+comboUseSignalBar     = input.bool(false, "Combo: Pin Bar (Signal Bar)", group = grpCombo)
+comboUseEngulfing     = input.bool(false, "Combo: Engulfing Candle",     group = grpCombo)
+comboUseKeyBar        = input.bool(false, "Combo: Key Bar",              group = grpCombo)
+comboUseDemandSupply  = input.bool(false, "Combo: Demand/Supply Zone",   group = grpCombo)
 
 grpSession       = "Session Filter"
 useSessionFilter = input.bool(false, "Only Trade During Session Hours", group = grpSession,
@@ -267,8 +271,21 @@ plotshape(showRsiDivergence and bearishRsiDiv, title = "Bearish RSI Divergence",
 longSignalCount = (useEngulfing and bullishEngulf ? 1 : 0) + (useSignalBar and bullishSignalBar ? 1 : 0) + (useKeyBar and bullishKeyBar ? 1 : 0) + (useDemandSupply and enterDemandZone ? 1 : 0) + (useRsiDivergence and bullishRsiDiv ? 1 : 0) + (useRsiLevels and enterOversold ? 1 : 0)
 shortSignalCount = (useEngulfing and bearishEngulf ? 1 : 0) + (useSignalBar and bearishSignalBar ? 1 : 0) + (useKeyBar and bearishKeyBar ? 1 : 0) + (useDemandSupply and enterSupplyZone ? 1 : 0) + (useRsiDivergence and bearishRsiDiv ? 1 : 0) + (useRsiLevels and enterOverbought ? 1 : 0)
 
-longPatternHit  = useConfluence ? longSignalCount  >= confluenceMinCount : longSignalCount  > 0
-shortPatternHit = useConfluence ? shortSignalCount >= confluenceMinCount : shortSignalCount > 0
+// --- Combo (Confluence) - a fully separate checklist; every ticked box must agree ---
+comboTickedCount = (comboUseRsiLevels ? 1 : 0) + (comboUseRsiDivergence ? 1 : 0) + (comboUseSignalBar ? 1 : 0) + (comboUseEngulfing ? 1 : 0) + (comboUseKeyBar ? 1 : 0) + (comboUseDemandSupply ? 1 : 0)
+
+comboLongAllAgree  = (not comboUseRsiLevels     or enterOversold)     and (not comboUseRsiDivergence or bullishRsiDiv) and
+     (not comboUseSignalBar or bullishSignalBar) and (not comboUseEngulfing or bullishEngulf) and
+     (not comboUseKeyBar    or bullishKeyBar)    and (not comboUseDemandSupply or enterDemandZone)
+comboShortAllAgree = (not comboUseRsiLevels     or enterOverbought)   and (not comboUseRsiDivergence or bearishRsiDiv) and
+     (not comboUseSignalBar or bearishSignalBar) and (not comboUseEngulfing or bearishEngulf) and
+     (not comboUseKeyBar    or bearishKeyBar)    and (not comboUseDemandSupply or enterSupplyZone)
+
+comboLongHit  = comboEnable and comboTickedCount >= 2 and comboLongAllAgree
+comboShortHit = comboEnable and comboTickedCount >= 2 and comboShortAllAgree
+
+longPatternHit  = longSignalCount  > 0 or comboLongHit
+shortPatternHit = shortSignalCount > 0 or comboShortHit
 
 inSession  = not na(time(timeframe.period, sessionHours))
 sessionOk  = not useSessionFilter or inSession
@@ -276,7 +293,7 @@ sessionOk  = not useSessionFilter or inSession
 longSignal  = allowLongs  and longPatternHit  and barConfirmed and sessionOk
 shortSignal = allowShorts and shortPatternHit and barConfirmed and sessionOk
 
-f_buildSignalText(engulf, sigbar, keybar, zone, rsidiv, rsilvl) =>
+f_buildSignalText(engulf, sigbar, keybar, zone, rsidiv, rsilvl, combo) =>
     txt = ""
     if engulf
         txt := txt + "Engulf"
@@ -290,10 +307,12 @@ f_buildSignalText(engulf, sigbar, keybar, zone, rsidiv, rsilvl) =>
         txt := txt + (txt == "" ? "" : "+") + "RSIdiv"
     if rsilvl
         txt := txt + (txt == "" ? "" : "+") + "RSILvl"
+    if combo
+        txt := txt + (txt == "" ? "" : "+") + "Combo"
     txt
 
-longSignalText  = f_buildSignalText(useEngulfing and bullishEngulf, useSignalBar and bullishSignalBar, useKeyBar and bullishKeyBar, useDemandSupply and enterDemandZone, useRsiDivergence and bullishRsiDiv, useRsiLevels and enterOversold)
-shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar and bearishSignalBar, useKeyBar and bearishKeyBar, useDemandSupply and enterSupplyZone, useRsiDivergence and bearishRsiDiv, useRsiLevels and enterOverbought)
+longSignalText  = f_buildSignalText(useEngulfing and bullishEngulf, useSignalBar and bullishSignalBar, useKeyBar and bullishKeyBar, useDemandSupply and enterDemandZone, useRsiDivergence and bullishRsiDiv, useRsiLevels and enterOversold, comboLongHit)
+shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar and bearishSignalBar, useKeyBar and bearishKeyBar, useDemandSupply and enterSupplyZone, useRsiDivergence and bearishRsiDiv, useRsiLevels and enterOverbought, comboShortHit)
 
 // =====================================================================================
 // DEBUG PLOTS - shows every raw pattern detected, whether or not it's enabled for trading
