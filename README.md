@@ -34,9 +34,49 @@ combination of:
   each entry.
 - **Stats Table** - toggle, position (defaults to top-right), and text size
   for the on-chart performance table.
+- **Webhook / Alerts** - toggle to fire an `alert()` call on every entry (see
+  Webhook automation below).
 
 ### On-chart output
 
 - **BUY / SELL labels** at each entry, tagged with which pattern(s) fired.
 - **Stats table** (top-right corner by default) showing: Win Rate, Wins,
   Losses, Daily Win, Daily Loss, and Drawdown.
+
+### No repainting
+
+The script is built so signals never repaint:
+
+- `calc_on_every_tick = false` and `process_orders_on_close = true` on the
+  `strategy()` declaration mean the script only recalculates and places
+  orders once a bar has actually closed, not on every intrabar price tick.
+- Every pattern check, debug plot, and trade condition is additionally
+  gated on `barstate.isconfirmed`, so nothing is evaluated, drawn, or traded
+  off a still-forming realtime bar. A BUY/SELL label or debug marker only
+  appears once, on a confirmed close, and never shifts or vanishes
+  afterward.
+
+### Webhook automation
+
+Pine Script cannot open a network connection or POST to a URL by itself -
+that part is always done by TradingView's own Alert engine, not by the
+script. What the script *can* do is hand TradingView a ready-to-send
+payload:
+
+- Every `strategy.entry()`/`strategy.exit()` call sets `alert_message` to a
+  JSON payload (symbol, action, price, stop, target, pattern, time).
+- Turning on **Fire alert() on entries** (Webhook / Alerts group) also calls
+  `alert()` directly on each entry with that same JSON.
+
+To actually deliver it to your bot/bridge:
+
+1. On the chart, click **Alert** -> create a new alert on this script.
+2. Set **Condition** to either:
+   - `Order fills` (recommended - covers entries and exits, uses the
+     `alert_message` set on each order), or
+   - `Any alert() function call` (fires only on entries, requires the
+     **Fire alert() on entries** setting to be on).
+3. Under **Notifications**, enable **Webhook URL** and paste your endpoint
+   (e.g. a broker bridge, Zapier, or your own server).
+4. Save. TradingView will POST the JSON message body to that URL whenever
+   the alert fires.

@@ -7,8 +7,14 @@ strategy("Lexxie - Debug Entry Signals (Engulfing / Signal Bar / Key Bar)",
      default_qty_value = 10,
      commission_type = strategy.commission.percent,
      commission_value = 0.02,
-     calc_on_every_tick = true,
+     calc_on_every_tick = false,
+     process_orders_on_close = true,
      max_bars_back = 500)
+
+// NOTE ON REPAINTING: calc_on_every_tick is false and every signal/order below is gated
+// on barstate.isconfirmed, so nothing is evaluated, plotted, or traded off an unclosed,
+// still-forming bar. Signals only appear once, on the confirmed close of a bar, and never
+// move or disappear afterward.
 
 // =====================================================================================
 // INPUTS
@@ -54,6 +60,10 @@ showLabels   = input.bool(true, "Show Buy/Sell Entry Labels", group = grpLabels)
 buyColor     = input.color(color.new(color.green, 0), "Buy Label Color", group = grpLabels)
 sellColor    = input.color(color.new(color.red, 0),   "Sell Label Color", group = grpLabels)
 
+grpWebhook       = "Webhook / Alerts"
+useWebhookAlerts = input.bool(false, "Fire alert() on entries (for webhook automation)", group = grpWebhook,
+     tooltip = "Pine Script cannot POST to a URL by itself. This only fires the alert() event inside the script - you still need to create a TradingView Alert on this script (Condition: 'Any alert() function call', or 'Order fills' for entries+exits) and paste your endpoint under Notifications -> Webhook URL.")
+
 grpTable       = "Stats Table"
 showTable      = input.bool(true, "Show Stats Table", group = grpTable)
 tablePos       = input.string(position.top_right, "Table Position",
@@ -64,6 +74,10 @@ tableTextSize  = input.string(size.small, "Table Text Size",
 // =====================================================================================
 // PATTERN DETECTION
 // =====================================================================================
+
+// Only true once a bar has fully closed - blocks every signal/plot/order below from
+// reacting to an in-progress, still-changing realtime bar (no repainting).
+barConfirmed = barstate.isconfirmed
 
 // --- Engulfing candle ---
 bullishEngulf = close[1] < open[1] and close > open and close > open[1] and open <= close[1] and
@@ -97,8 +111,8 @@ bearishKeyBar = barRange >= atrKey * keyBarRangeMult and close < open and closeL
 longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar)
 shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar)
 
-longSignal  = allowLongs  and longPatternHit
-shortSignal = allowShorts and shortPatternHit
+longSignal  = allowLongs  and longPatternHit  and barConfirmed
+shortSignal = allowShorts and shortPatternHit and barConfirmed
 
 f_buildSignalText(engulf, sigbar, keybar) =>
     txt = ""
@@ -117,12 +131,12 @@ shortSignalText = f_buildSignalText(useEngulfing and bearishEngulf, useSignalBar
 // DEBUG PLOTS - shows every raw pattern detected, whether or not it's enabled for trading
 // =====================================================================================
 
-plotshape(debugMode and bullishEngulf,    title = "Bull Engulf",  style = shape.triangleup,   location = location.belowbar, color = color.new(color.lime,     0), size = size.tiny)
-plotshape(debugMode and bearishEngulf,    title = "Bear Engulf",  style = shape.triangledown, location = location.abovebar, color = color.new(color.red,     0), size = size.tiny)
-plotshape(debugMode and bullishSignalBar, title = "Bull SigBar",  style = shape.circle,        location = location.belowbar, color = color.new(color.aqua,    0), size = size.tiny)
-plotshape(debugMode and bearishSignalBar, title = "Bear SigBar",  style = shape.circle,        location = location.abovebar, color = color.new(color.orange,  0), size = size.tiny)
-plotshape(debugMode and bullishKeyBar,    title = "Bull KeyBar",  style = shape.square,         location = location.belowbar, color = color.new(color.yellow,  0), size = size.tiny)
-plotshape(debugMode and bearishKeyBar,    title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
+plotshape(debugMode and bullishEngulf    and barConfirmed, title = "Bull Engulf",  style = shape.triangleup,   location = location.belowbar, color = color.new(color.lime,     0), size = size.tiny)
+plotshape(debugMode and bearishEngulf    and barConfirmed, title = "Bear Engulf",  style = shape.triangledown, location = location.abovebar, color = color.new(color.red,     0), size = size.tiny)
+plotshape(debugMode and bullishSignalBar and barConfirmed, title = "Bull SigBar",  style = shape.circle,        location = location.belowbar, color = color.new(color.aqua,    0), size = size.tiny)
+plotshape(debugMode and bearishSignalBar and barConfirmed, title = "Bear SigBar",  style = shape.circle,        location = location.abovebar, color = color.new(color.orange,  0), size = size.tiny)
+plotshape(debugMode and bullishKeyBar    and barConfirmed, title = "Bull KeyBar",  style = shape.square,         location = location.belowbar, color = color.new(color.yellow,  0), size = size.tiny)
+plotshape(debugMode and bearishKeyBar    and barConfirmed, title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
 
 if warnTf and barstate.islast and timeframe.period != "1"
     label.new(bar_index, high, "Recommended timeframe: 1 minute\n(current: " + timeframe.period + ")",
@@ -147,18 +161,30 @@ shortTP = close - shortRisk * rrRatio
 // =====================================================================================
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
-    strategy.entry("Long", strategy.long)
-    strategy.exit("Long Exit", "Long", stop = longSL, limit = longTP)
+    longAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
+         '","action":"buy","price":' + str.tostring(close) + ',"stop":' + str.tostring(longSL) + ',"target":' + str.tostring(longTP) +
+         ',"pattern":"' + longSignalText + '","time":"' + str.tostring(time) + '"}'
+    strategy.entry("Long", strategy.long, alert_message = longAlertMsg)
+    strategy.exit("Long Exit", "Long", stop = longSL, limit = longTP,
+         alert_message = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_long","price":{{strategy.order.price}},"time":"{{time}}"}')
     if showLabels
         label.new(bar_index, low, "BUY\n" + longSignalText, style = label.style_label_up,
              color = buyColor, textcolor = color.white, size = size.small)
+    if useWebhookAlerts
+        alert(longAlertMsg, alert.freq_once_per_bar_close)
 
 if shortSignal and strategy.position_size >= 0 and shortRisk > 0
-    strategy.entry("Short", strategy.short)
-    strategy.exit("Short Exit", "Short", stop = shortSL, limit = shortTP)
+    shortAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
+         '","action":"sell","price":' + str.tostring(close) + ',"stop":' + str.tostring(shortSL) + ',"target":' + str.tostring(shortTP) +
+         ',"pattern":"' + shortSignalText + '","time":"' + str.tostring(time) + '"}'
+    strategy.entry("Short", strategy.short, alert_message = shortAlertMsg)
+    strategy.exit("Short Exit", "Short", stop = shortSL, limit = shortTP,
+         alert_message = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_short","price":{{strategy.order.price}},"time":"{{time}}"}')
     if showLabels
         label.new(bar_index, high, "SELL\n" + shortSignalText, style = label.style_label_down,
              color = sellColor, textcolor = color.white, size = size.small)
+    if useWebhookAlerts
+        alert(shortAlertMsg, alert.freq_once_per_bar_close)
 
 alertcondition(longSignal,  title = "Lexxie Buy Signal",  message = "Lexxie: Buy signal detected")
 alertcondition(shortSignal, title = "Lexxie Sell Signal", message = "Lexxie: Sell signal detected")
