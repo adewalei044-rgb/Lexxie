@@ -34,6 +34,12 @@ useRsiLevels     = input.bool(false, "Trade Normal RSI Levels", group = grpSigna
 allowLongs   = input.bool(true,  "Allow Long (Buy) Entries",      group = grpSignals)
 allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSignals)
 
+grpConfluence      = "Confluence Mode"
+useConfluence      = input.bool(false, "Require Multiple Signals To Agree (Confluence)", group = grpConfluence,
+     tooltip = "Off (default) = OR logic, trades on any single enabled signal above. On = AND-style logic, only trades when at least 'Min Signals Required' of the enabled signals fire on the same bar, in the same direction.")
+confluenceMinCount = input.int(2, "Min Signals Required", minval = 2, maxval = 6, group = grpConfluence,
+     tooltip = "How many of the checked Entry Signal Types must agree on the same bar before a trade fires. Only used when Confluence Mode is on.")
+
 grpSession       = "Session Filter"
 useSessionFilter = input.bool(false, "Only Trade During Session Hours", group = grpSession,
      tooltip = "Restricting entries to a liquid session window (e.g. market open) usually helps 1-minute signal quality more than tweaking pattern thresholds.")
@@ -258,8 +264,11 @@ plotshape(showRsiDivergence and bearishRsiDiv, title = "Bearish RSI Divergence",
 // SIGNAL COMBINATION
 // =====================================================================================
 
-longPatternHit  = (useEngulfing and bullishEngulf) or (useSignalBar and bullishSignalBar) or (useKeyBar and bullishKeyBar) or (useDemandSupply and enterDemandZone) or (useRsiDivergence and bullishRsiDiv) or (useRsiLevels and enterOversold)
-shortPatternHit = (useEngulfing and bearishEngulf) or (useSignalBar and bearishSignalBar) or (useKeyBar and bearishKeyBar) or (useDemandSupply and enterSupplyZone) or (useRsiDivergence and bearishRsiDiv) or (useRsiLevels and enterOverbought)
+longSignalCount = (useEngulfing and bullishEngulf ? 1 : 0) + (useSignalBar and bullishSignalBar ? 1 : 0) + (useKeyBar and bullishKeyBar ? 1 : 0) + (useDemandSupply and enterDemandZone ? 1 : 0) + (useRsiDivergence and bullishRsiDiv ? 1 : 0) + (useRsiLevels and enterOversold ? 1 : 0)
+shortSignalCount = (useEngulfing and bearishEngulf ? 1 : 0) + (useSignalBar and bearishSignalBar ? 1 : 0) + (useKeyBar and bearishKeyBar ? 1 : 0) + (useDemandSupply and enterSupplyZone ? 1 : 0) + (useRsiDivergence and bearishRsiDiv ? 1 : 0) + (useRsiLevels and enterOverbought ? 1 : 0)
+
+longPatternHit  = useConfluence ? longSignalCount  >= confluenceMinCount : longSignalCount  > 0
+shortPatternHit = useConfluence ? shortSignalCount >= confluenceMinCount : shortSignalCount > 0
 
 inSession  = not na(time(timeframe.period, sessionHours))
 sessionOk  = not useSessionFilter or inSession
