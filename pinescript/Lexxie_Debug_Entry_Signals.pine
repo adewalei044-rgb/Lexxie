@@ -36,7 +36,9 @@ allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSig
 
 grpCombo = "Combo (Confluence) - separate from Entry Signal Types above"
 comboEnable = input.bool(false, "Enable Combo Signal", group = grpCombo,
-     tooltip = "This whole group is independent of Entry Signal Types above - it runs alongside it, not instead of it. Tick 2 or more boxes below and a trade only fires when ALL of the ticked ones agree on the same bar, same direction.")
+     tooltip = "This whole group is independent of Entry Signal Types above - it runs alongside it, not instead of it. Tick 2 or more boxes below and a trade only fires once ALL of the ticked ones have agreed (same direction) within the confluence window below.")
+comboWindowBars       = input.int(5, "Confluence Window (bars)", minval = 1, maxval = 50, group = grpCombo,
+     tooltip = "Each ticked signal just needs to have fired within this many bars of each other, not all on the exact same candle - requiring the exact same bar makes Combo fire extremely rarely, or never.")
 comboUseRsiLevels     = input.bool(false, "Combo: RSI Level (OB/OS)",     group = grpCombo)
 comboUseRsiDivergence = input.bool(false, "Combo: RSI Divergence",       group = grpCombo)
 comboUseSignalBar     = input.bool(false, "Combo: Pin Bar (Signal Bar)", group = grpCombo)
@@ -280,18 +282,34 @@ plotshape(showRsiDivergence and bearishRsiDiv, title = "Bearish RSI Divergence",
 longSignalCount = (useEngulfing and bullishEngulf ? 1 : 0) + (useSignalBar and bullishSignalBar ? 1 : 0) + (useKeyBar and bullishKeyBar ? 1 : 0) + (useDemandSupply and enterDemandZone ? 1 : 0) + (useRsiDivergence and bullishRsiDiv ? 1 : 0) + (useRsiLevels and enterOversold ? 1 : 0)
 shortSignalCount = (useEngulfing and bearishEngulf ? 1 : 0) + (useSignalBar and bearishSignalBar ? 1 : 0) + (useKeyBar and bearishKeyBar ? 1 : 0) + (useDemandSupply and enterSupplyZone ? 1 : 0) + (useRsiDivergence and bearishRsiDiv ? 1 : 0) + (useRsiLevels and enterOverbought ? 1 : 0)
 
-// --- Combo (Confluence) - a fully separate checklist; every ticked box must agree ---
+// --- Combo (Confluence) - a fully separate checklist; every ticked box must agree within
+// comboWindowBars of each other. Requiring the exact same candle (the original design) made
+// this fire extremely rarely, since independent patterns almost never coincide on one bar.
+f_recentlyTrue(cond) =>
+    sinceTrue = ta.barssince(cond)
+    not na(sinceTrue) and sinceTrue <= comboWindowBars
+
 comboTickedCount = (comboUseRsiLevels ? 1 : 0) + (comboUseRsiDivergence ? 1 : 0) + (comboUseSignalBar ? 1 : 0) + (comboUseEngulfing ? 1 : 0) + (comboUseKeyBar ? 1 : 0) + (comboUseDemandSupply ? 1 : 0)
 
-comboLongAllAgree  = (not comboUseRsiLevels     or enterOversold)     and (not comboUseRsiDivergence or bullishRsiDiv) and
-     (not comboUseSignalBar or bullishSignalBar) and (not comboUseEngulfing or bullishEngulf) and
-     (not comboUseKeyBar    or bullishKeyBar)    and (not comboUseDemandSupply or enterDemandZone)
-comboShortAllAgree = (not comboUseRsiLevels     or enterOverbought)   and (not comboUseRsiDivergence or bearishRsiDiv) and
-     (not comboUseSignalBar or bearishSignalBar) and (not comboUseEngulfing or bearishEngulf) and
-     (not comboUseKeyBar    or bearishKeyBar)    and (not comboUseDemandSupply or enterSupplyZone)
+comboLongAllAgree  = (not comboUseRsiLevels     or f_recentlyTrue(enterOversold))     and (not comboUseRsiDivergence or f_recentlyTrue(bullishRsiDiv)) and
+     (not comboUseSignalBar or f_recentlyTrue(bullishSignalBar)) and (not comboUseEngulfing or f_recentlyTrue(bullishEngulf)) and
+     (not comboUseKeyBar    or f_recentlyTrue(bullishKeyBar))    and (not comboUseDemandSupply or f_recentlyTrue(enterDemandZone))
+comboShortAllAgree = (not comboUseRsiLevels     or f_recentlyTrue(enterOverbought))   and (not comboUseRsiDivergence or f_recentlyTrue(bearishRsiDiv)) and
+     (not comboUseSignalBar or f_recentlyTrue(bearishSignalBar)) and (not comboUseEngulfing or f_recentlyTrue(bearishEngulf)) and
+     (not comboUseKeyBar    or f_recentlyTrue(bearishKeyBar))    and (not comboUseDemandSupply or f_recentlyTrue(enterSupplyZone))
 
-comboLongHit  = comboEnable and comboTickedCount >= 2 and comboLongAllAgree
-comboShortHit = comboEnable and comboTickedCount >= 2 and comboShortAllAgree
+// Only fire once per confluence, on the bar where the LAST ticked signal actually fires -
+// otherwise comboLongAllAgree would stay true for comboWindowBars bars in a row and could
+// fire repeatedly right after a position closes.
+comboLongTrigger  = (comboUseRsiLevels     and enterOversold)     or (comboUseRsiDivergence and bullishRsiDiv) or
+     (comboUseSignalBar and bullishSignalBar) or (comboUseEngulfing and bullishEngulf) or
+     (comboUseKeyBar    and bullishKeyBar)    or (comboUseDemandSupply and enterDemandZone)
+comboShortTrigger = (comboUseRsiLevels     and enterOverbought)   or (comboUseRsiDivergence and bearishRsiDiv) or
+     (comboUseSignalBar and bearishSignalBar) or (comboUseEngulfing and bearishEngulf) or
+     (comboUseKeyBar    and bearishKeyBar)    or (comboUseDemandSupply and enterSupplyZone)
+
+comboLongHit  = comboEnable and comboTickedCount >= 2 and comboLongAllAgree  and comboLongTrigger
+comboShortHit = comboEnable and comboTickedCount >= 2 and comboShortAllAgree and comboShortTrigger
 
 longPatternHit  = longSignalCount  > 0 or comboLongHit
 shortPatternHit = shortSignalCount > 0 or comboShortHit
