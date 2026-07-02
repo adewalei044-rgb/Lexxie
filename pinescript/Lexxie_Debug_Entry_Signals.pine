@@ -34,9 +34,9 @@ useRsiLevels     = input.bool(false, "Trade Normal RSI Levels", group = grpSigna
 allowLongs   = input.bool(true,  "Allow Long (Buy) Entries",      group = grpSignals)
 allowShorts  = input.bool(true,  "Allow Short (Sell) Entries",    group = grpSignals)
 
-grpCombo = "Combo (Confluence) - separate from Entry Signal Types above"
+grpCombo = "Combo (Confluence) - either/or with Entry Signal Types above, never both"
 comboEnable = input.bool(false, "Enable Combo Signal", group = grpCombo,
-     tooltip = "This whole group is independent of Entry Signal Types above - it runs alongside it, not instead of it. Tick 2 or more boxes below and a trade only fires once ALL of the ticked ones have agreed (same direction) within the confluence window below.")
+     tooltip = "This is a mode switch, not an add-on. ON: only Combo can trigger trades - the Entry Signal Types list above is ignored for trading (its checkboxes still just drive the debug plots). OFF: only the Entry Signal Types list above can trigger trades, Combo is fully inactive. Tick 2 or more boxes below and, while Combo is ON, a trade only fires once ALL of the ticked ones have agreed (same direction) within the confluence window below.")
 comboWindowBars       = input.int(5, "Confluence Window (bars)", minval = 1, maxval = 50, group = grpCombo,
      tooltip = "Each ticked signal just needs to have fired within this many bars of each other, not all on the exact same candle - requiring the exact same bar makes Combo fire extremely rarely, or never.")
 comboUseRsiLevels     = input.bool(false, "Combo: RSI Level (OB/OS)",     group = grpCombo)
@@ -311,8 +311,12 @@ comboShortTrigger = (comboUseRsiLevels     and enterOverbought)   or (comboUseRs
 comboLongHit  = comboEnable and comboTickedCount >= 2 and comboLongAllAgree  and comboLongTrigger
 comboShortHit = comboEnable and comboTickedCount >= 2 and comboShortAllAgree and comboShortTrigger
 
-longPatternHit  = longSignalCount  > 0 or comboLongHit
-shortPatternHit = shortSignalCount > 0 or comboShortHit
+// Combo and the Entry Signal Types list are mutually exclusive, not merged - "Enable Combo
+// Signal" is the mode switch. On: only Combo can trigger trades, the regular list is ignored
+// for trading (its checkboxes still just drive the debug plots). Off: only the regular list
+// can trigger trades, exactly as before.
+longPatternHit  = comboEnable ? comboLongHit  : longSignalCount  > 0
+shortPatternHit = comboEnable ? comboShortHit : shortSignalCount > 0
 
 inSession  = not na(time(timeframe.period, sessionHours))
 sessionOk  = not useSessionFilter or inSession
