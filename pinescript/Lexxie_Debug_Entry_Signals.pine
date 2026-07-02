@@ -375,30 +375,18 @@ shortTP = close - shortRisk * rrRatio
 // ENTRIES + BUY / SELL LABELS + SL/TP LINES
 // =====================================================================================
 
-// Only the current/latest trade's flag and drawing are kept on the chart - each new entry
-// deletes the previous trade's marker/tag/box first, so the chart never accumulates dozens
-// of overlapping flags from every historical trade. Kept deliberately simple: just the
-// BUY/SELL flag, a "TP" tag, and the shaded profit/loss zone box - no SL or Entry line/label.
+// Every trade keeps its own flag/tag/box - nothing is deleted. Trades never overlap in time
+// (only one position open at once), so each box only ever spans its own trade's bars and
+// stops extending the moment that trade closes, which keeps the chart clean without having
+// to erase history. Only the box/TP-tag of the currently OPEN trade keeps moving forward.
 var line  curTPLine      = na
 var label curTPLabel     = na
-var label curEntryMarker = na
 var box   curProfitBox   = na
 var box   curLossBox     = na
 
 profitBoxColor  = color.new(tpLineColor, 85)
 lossBoxColor    = color.new(slLineColor, 85)
-
-f_deleteCurrentDrawings() =>
-    if not na(curTPLine)
-        line.delete(curTPLine)
-    if not na(curTPLabel)
-        label.delete(curTPLabel)
-    if not na(curEntryMarker)
-        label.delete(curEntryMarker)
-    if not na(curProfitBox)
-        box.delete(curProfitBox)
-    if not na(curLossBox)
-        box.delete(curLossBox)
+infoColor       = color.new(color.white, 100)
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
     longAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -407,10 +395,10 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
     strategy.entry("Long", strategy.long, alert_message = longAlertMsg)
     strategy.exit("Long Exit", "Long", stop = longSL, limit = longTP,
          alert_message = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_long","price":{{strategy.order.price}},"time":"{{time}}"}')
-    f_deleteCurrentDrawings()
     if showLabels
-        curEntryMarker := label.new(bar_index, low, "BUY\n" + longSignalText, style = label.style_label_up,
-             color = buyColor, textcolor = color.white, size = labelTextSize)
+        label.new(bar_index, low, "Buy", style = label.style_label_up, color = buyColor, textcolor = color.white, size = labelTextSize)
+        label.new(bar_index, low - atrTrade * 0.6, "LE\n" + str.tostring(close, format.mintick), style = label.style_label_up,
+             color = infoColor, textcolor = color.gray, size = size.tiny)
     if useWebhookAlerts
         alert(longAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
@@ -427,10 +415,10 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     strategy.entry("Short", strategy.short, alert_message = shortAlertMsg)
     strategy.exit("Short Exit", "Short", stop = shortSL, limit = shortTP,
          alert_message = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_short","price":{{strategy.order.price}},"time":"{{time}}"}')
-    f_deleteCurrentDrawings()
     if showLabels
-        curEntryMarker := label.new(bar_index, high, "SELL\n" + shortSignalText, style = label.style_label_down,
-             color = sellColor, textcolor = color.white, size = labelTextSize)
+        label.new(bar_index, high, "Sell", style = label.style_label_down, color = sellColor, textcolor = color.white, size = labelTextSize)
+        label.new(bar_index, high + atrTrade * 0.6, "SE\n" + str.tostring(close, format.mintick), style = label.style_label_down,
+             color = infoColor, textcolor = color.gray, size = size.tiny)
     if useWebhookAlerts
         alert(shortAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
@@ -441,7 +429,8 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
         curLossBox   := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
 // Extend the active trade's TP tag and zone box to follow the current bar until the
-// position closes. Only the BUY/SELL entry marker label stays fixed at the entry bar.
+// position closes - this naturally stops the instant the trade exits, so it never creeps
+// into the next trade's bars.
 if showSLTPLines and strategy.position_size != 0 and not na(curTPLine)
     line.set_x2(curTPLine, bar_index)
     label.set_x(curTPLabel, bar_index)
