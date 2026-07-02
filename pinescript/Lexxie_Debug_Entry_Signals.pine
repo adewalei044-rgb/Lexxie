@@ -103,6 +103,8 @@ sellColor    = input.color(color.new(color.red, 0),   "Sell Label Color", group 
 
 grpSLTP       = "Stop Loss / Take Profit Lines"
 showSLTPLines = input.bool(true, "Show SL/TP Lines", group = grpSLTP)
+showSLTPZones = input.bool(true, "Show Profit/Loss Zone Boxes", group = grpSLTP,
+     tooltip = "Independent of the lines above - shows/hides the shaded green (profit) and red (loss) zone boxes between entry and TP/SL.")
 slLineColor   = input.color(color.new(color.red, 0),  "Stop Loss Line Color", group = grpSLTP)
 tpLineColor   = input.color(color.new(color.teal, 0), "Take Profit Line Color", group = grpSLTP)
 
@@ -385,16 +387,18 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
             label.delete(longSLLabel)
             label.delete(longTPLabel)
             label.delete(longEntryLabel)
-            box.delete(longProfitBox)
-            box.delete(longLossBox)
         longSLLine     := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor, style = line.style_dashed, width = 1)
         longTPLine     := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
         longEntryLine  := line.new(bar_index, close, bar_index, close, color = entryLineColor, style = line.style_dashed, width = 1)
         longSLLabel    := label.new(bar_index, longSL, "SL: "    + str.tostring(longSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
         longTPLabel    := label.new(bar_index, longTP, "TP: "    + str.tostring(longTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
         longEntryLabel := label.new(bar_index, close,  "Entry: " + str.tostring(close,  format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
-        longProfitBox  := box.new(left = bar_index, top = longTP, right = bar_index, bottom = close, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
-        longLossBox    := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
+    if showSLTPZones
+        if not na(longProfitBox)
+            box.delete(longProfitBox)
+            box.delete(longLossBox)
+        longProfitBox := box.new(left = bar_index, top = longTP, right = bar_index, bottom = close, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
+        longLossBox   := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
 if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     shortAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -416,16 +420,18 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
             label.delete(shortSLLabel)
             label.delete(shortTPLabel)
             label.delete(shortEntryLabel)
-            box.delete(shortProfitBox)
-            box.delete(shortLossBox)
         shortSLLine     := line.new(bar_index, shortSL, bar_index, shortSL, color = slLineColor, style = line.style_dashed, width = 1)
         shortTPLine     := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
         shortEntryLine  := line.new(bar_index, close,   bar_index, close,   color = entryLineColor, style = line.style_dashed, width = 1)
         shortSLLabel    := label.new(bar_index, shortSL, "SL: "    + str.tostring(shortSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
         shortTPLabel    := label.new(bar_index, shortTP, "TP: "    + str.tostring(shortTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
         shortEntryLabel := label.new(bar_index, close,   "Entry: " + str.tostring(close,   format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
-        shortProfitBox  := box.new(left = bar_index, top = close,    right = bar_index, bottom = shortTP, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
-        shortLossBox    := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
+    if showSLTPZones
+        if not na(shortProfitBox)
+            box.delete(shortProfitBox)
+            box.delete(shortLossBox)
+        shortProfitBox := box.new(left = bar_index, top = close,    right = bar_index, bottom = shortTP, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
+        shortLossBox   := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
 // Extend the active trade's SL/TP/Entry lines, labels, and zone boxes to follow price until the position closes
 if showSLTPLines and strategy.position_size > 0 and not na(longSLLine)
@@ -435,8 +441,6 @@ if showSLTPLines and strategy.position_size > 0 and not na(longSLLine)
     label.set_x(longSLLabel, bar_index)
     label.set_x(longTPLabel, bar_index)
     label.set_x(longEntryLabel, bar_index)
-    box.set_right(longProfitBox, bar_index)
-    box.set_right(longLossBox, bar_index)
 if showSLTPLines and strategy.position_size < 0 and not na(shortSLLine)
     line.set_x2(shortSLLine, bar_index)
     line.set_x2(shortTPLine, bar_index)
@@ -444,6 +448,10 @@ if showSLTPLines and strategy.position_size < 0 and not na(shortSLLine)
     label.set_x(shortSLLabel, bar_index)
     label.set_x(shortTPLabel, bar_index)
     label.set_x(shortEntryLabel, bar_index)
+if showSLTPZones and strategy.position_size > 0 and not na(longProfitBox)
+    box.set_right(longProfitBox, bar_index)
+    box.set_right(longLossBox, bar_index)
+if showSLTPZones and strategy.position_size < 0 and not na(shortProfitBox)
     box.set_right(shortProfitBox, bar_index)
     box.set_right(shortLossBox, bar_index)
 
