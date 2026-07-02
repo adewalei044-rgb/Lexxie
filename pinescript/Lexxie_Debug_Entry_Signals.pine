@@ -316,8 +316,8 @@ comboShortHit = comboEnable and comboTickedCount >= 2 and comboShortAllAgree and
 // Signal" is the mode switch. On: only Combo can trigger trades, the regular list is ignored
 // for trading (its checkboxes still just drive the debug plots). Off: only the regular list
 // can trigger trades, exactly as before.
-longPatternHit  = comboEnable ? comboLongHit  : longSignalCount  > 0
-shortPatternHit = comboEnable ? comboShortHit : shortSignalCount > 0
+longPatternHit  = comboEnable ? comboLongHit  : (longSignalCount  > 0)
+shortPatternHit = comboEnable ? comboShortHit : (shortSignalCount > 0)
 
 inSession  = not na(time(timeframe.period, sessionHours))
 sessionOk  = not useSessionFilter or inSession
