@@ -67,6 +67,11 @@ showLabels   = input.bool(true, "Show Buy/Sell Entry Labels", group = grpLabels)
 buyColor     = input.color(color.new(color.green, 0), "Buy Label Color", group = grpLabels)
 sellColor    = input.color(color.new(color.red, 0),   "Sell Label Color", group = grpLabels)
 
+grpSLTP       = "Stop Loss / Take Profit Lines"
+showSLTPLines = input.bool(true, "Show SL/TP Lines", group = grpSLTP)
+slLineColor   = input.color(color.new(color.red, 0),  "Stop Loss Line Color", group = grpSLTP)
+tpLineColor   = input.color(color.new(color.teal, 0), "Take Profit Line Color", group = grpSLTP)
+
 grpWebhook       = "Webhook / Alerts"
 useWebhookAlerts = input.bool(false, "Fire alert() on entries (for webhook automation)", group = grpWebhook,
      tooltip = "Pine Script cannot POST to a URL by itself. This only fires the alert() event inside the script - you still need to create a TradingView Alert on this script (Condition: 'Any alert() function call', or 'Order fills' for entries+exits) and paste your endpoint under Notifications -> Webhook URL.")
@@ -167,8 +172,13 @@ shortRisk = shortSL - close
 shortTP = close - shortRisk * rrRatio
 
 // =====================================================================================
-// ENTRIES + BUY / SELL LABELS
+// ENTRIES + BUY / SELL LABELS + SL/TP LINES
 // =====================================================================================
+
+var line  longSLLine  = na
+var line  longTPLine  = na
+var line  shortSLLine = na
+var line  shortTPLine = na
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
     longAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -182,6 +192,14 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
              color = buyColor, textcolor = color.white, size = size.small)
     if useWebhookAlerts
         alert(longAlertMsg, alert.freq_once_per_bar_close)
+    if showSLTPLines
+        if not na(longSLLine)
+            line.delete(longSLLine)
+            line.delete(longTPLine)
+        longSLLine := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor, style = line.style_dashed, width = 1)
+        longTPLine := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
+        label.new(bar_index, longSL, "SL " + str.tostring(longSL), style = label.style_label_right, color = color.new(color.white, 100), textcolor = slLineColor, size = size.tiny)
+        label.new(bar_index, longTP, "TP " + str.tostring(longTP), style = label.style_label_right, color = color.new(color.white, 100), textcolor = tpLineColor, size = size.tiny)
 
 if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     shortAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -195,6 +213,22 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
              color = sellColor, textcolor = color.white, size = size.small)
     if useWebhookAlerts
         alert(shortAlertMsg, alert.freq_once_per_bar_close)
+    if showSLTPLines
+        if not na(shortSLLine)
+            line.delete(shortSLLine)
+            line.delete(shortTPLine)
+        shortSLLine := line.new(bar_index, shortSL, bar_index, shortSL, color = slLineColor, style = line.style_dashed, width = 1)
+        shortTPLine := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
+        label.new(bar_index, shortSL, "SL " + str.tostring(shortSL), style = label.style_label_right, color = color.new(color.white, 100), textcolor = slLineColor, size = size.tiny)
+        label.new(bar_index, shortTP, "TP " + str.tostring(shortTP), style = label.style_label_right, color = color.new(color.white, 100), textcolor = tpLineColor, size = size.tiny)
+
+// Extend the active trade's SL/TP lines to follow price until the position closes
+if showSLTPLines and strategy.position_size > 0 and not na(longSLLine)
+    line.set_x2(longSLLine, bar_index)
+    line.set_x2(longTPLine, bar_index)
+if showSLTPLines and strategy.position_size < 0 and not na(shortSLLine)
+    line.set_x2(shortSLLine, bar_index)
+    line.set_x2(shortTPLine, bar_index)
 
 alertcondition(longSignal,  title = "Lexxie Buy Signal",  message = "Lexxie: Buy signal detected")
 alertcondition(shortSignal, title = "Lexxie Sell Signal", message = "Lexxie: Sell signal detected")
