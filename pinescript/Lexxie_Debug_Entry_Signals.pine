@@ -349,6 +349,8 @@ var line  longEntryLine  = na
 var label longSLLabel    = na
 var label longTPLabel    = na
 var label longEntryLabel = na
+var box   longProfitBox  = na
+var box   longLossBox    = na
 
 var line  shortSLLine     = na
 var line  shortTPLine     = na
@@ -356,8 +358,12 @@ var line  shortEntryLine  = na
 var label shortSLLabel    = na
 var label shortTPLabel    = na
 var label shortEntryLabel = na
+var box   shortProfitBox  = na
+var box   shortLossBox    = na
 
-entryLineColor = color.new(color.blue, 0)
+entryLineColor  = color.new(color.blue, 0)
+profitBoxColor  = color.new(tpLineColor, 85)
+lossBoxColor    = color.new(slLineColor, 85)
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
     longAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -379,12 +385,16 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
             label.delete(longSLLabel)
             label.delete(longTPLabel)
             label.delete(longEntryLabel)
+            box.delete(longProfitBox)
+            box.delete(longLossBox)
         longSLLine     := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor, style = line.style_dashed, width = 1)
         longTPLine     := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
         longEntryLine  := line.new(bar_index, close, bar_index, close, color = entryLineColor, style = line.style_dashed, width = 1)
         longSLLabel    := label.new(bar_index, longSL, "SL: "    + str.tostring(longSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
         longTPLabel    := label.new(bar_index, longTP, "TP: "    + str.tostring(longTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
         longEntryLabel := label.new(bar_index, close,  "Entry: " + str.tostring(close,  format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
+        longProfitBox  := box.new(left = bar_index, top = longTP, right = bar_index, bottom = close, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
+        longLossBox    := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
 if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     shortAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -406,14 +416,18 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
             label.delete(shortSLLabel)
             label.delete(shortTPLabel)
             label.delete(shortEntryLabel)
+            box.delete(shortProfitBox)
+            box.delete(shortLossBox)
         shortSLLine     := line.new(bar_index, shortSL, bar_index, shortSL, color = slLineColor, style = line.style_dashed, width = 1)
         shortTPLine     := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
         shortEntryLine  := line.new(bar_index, close,   bar_index, close,   color = entryLineColor, style = line.style_dashed, width = 1)
         shortSLLabel    := label.new(bar_index, shortSL, "SL: "    + str.tostring(shortSL, format.mintick), style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
         shortTPLabel    := label.new(bar_index, shortTP, "TP: "    + str.tostring(shortTP, format.mintick), style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
         shortEntryLabel := label.new(bar_index, close,   "Entry: " + str.tostring(close,   format.mintick), style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
+        shortProfitBox  := box.new(left = bar_index, top = close,    right = bar_index, bottom = shortTP, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
+        shortLossBox    := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
-// Extend the active trade's SL/TP/Entry lines and labels to follow price until the position closes
+// Extend the active trade's SL/TP/Entry lines, labels, and zone boxes to follow price until the position closes
 if showSLTPLines and strategy.position_size > 0 and not na(longSLLine)
     line.set_x2(longSLLine, bar_index)
     line.set_x2(longTPLine, bar_index)
@@ -421,6 +435,8 @@ if showSLTPLines and strategy.position_size > 0 and not na(longSLLine)
     label.set_x(longSLLabel, bar_index)
     label.set_x(longTPLabel, bar_index)
     label.set_x(longEntryLabel, bar_index)
+    box.set_right(longProfitBox, bar_index)
+    box.set_right(longLossBox, bar_index)
 if showSLTPLines and strategy.position_size < 0 and not na(shortSLLine)
     line.set_x2(shortSLLine, bar_index)
     line.set_x2(shortTPLine, bar_index)
@@ -428,6 +444,8 @@ if showSLTPLines and strategy.position_size < 0 and not na(shortSLLine)
     label.set_x(shortSLLabel, bar_index)
     label.set_x(shortTPLabel, bar_index)
     label.set_x(shortEntryLabel, bar_index)
+    box.set_right(shortProfitBox, bar_index)
+    box.set_right(shortLossBox, bar_index)
 
 alertcondition(longSignal,  title = "Lexxie Buy Signal",  message = "Lexxie: Buy signal detected")
 alertcondition(shortSignal, title = "Lexxie Sell Signal", message = "Lexxie: Sell signal detected")
