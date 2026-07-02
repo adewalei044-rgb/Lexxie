@@ -237,22 +237,35 @@ alertcondition(shortSignal, title = "Lexxie Sell Signal", message = "Lexxie: Sel
 // PERFORMANCE TRACKING (win rate, win/loss, daily win/loss, drawdown)
 // =====================================================================================
 
-var int   totalWins        = 0
-var int   totalLosses      = 0
-var int   dailyWins        = 0
-var int   dailyLosses      = 0
-var int   lastClosedTrades = 0
-var float peakEquity       = strategy.initial_capital
-var float maxDrawdownPct   = 0.0
+var int    totalWins        = 0
+var int    totalLosses      = 0
+var int    dailyWins        = 0
+var int    dailyLosses      = 0
+var int    lastClosedTrades = 0
+var float  peakEquity       = strategy.initial_capital
+var float  maxDrawdownPct   = 0.0
+var float  dailyPnL         = 0.0
+var float  worstDayPnL      = na
+var string worstDayDate     = "-"
+var string dayLabel         = ""
+
+today = str.format_time(time, "MM/dd")
 
 newDay = ta.change(time("D")) != 0
 if newDay
+    if na(worstDayPnL) or dailyPnL < worstDayPnL
+        worstDayPnL  := dailyPnL
+        worstDayDate := dayLabel
     dailyWins   := 0
     dailyLosses := 0
+    dailyPnL    := 0.0
+
+dayLabel := today
 
 if strategy.closedtrades > lastClosedTrades
     for i = lastClosedTrades to strategy.closedtrades - 1
         tradeProfit = strategy.closedtrades.profit(i)
+        dailyPnL += tradeProfit
         if tradeProfit > 0
             totalWins   += 1
             dailyWins   += 1
@@ -275,7 +288,7 @@ winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
 // STATS TABLE - top right corner (position configurable)
 // =====================================================================================
 
-var table statsTable = table.new(tablePos, 2, 8, border_width = 1, border_color = color.new(color.gray, 0), frame_color = color.new(color.gray, 0), frame_width = 1)
+var table statsTable = table.new(tablePos, 2, 9, border_width = 1, border_color = color.new(color.gray, 0), frame_color = color.new(color.gray, 0), frame_width = 1)
 
 if showTable and barstate.islast
     table.cell(statsTable, 0, 0, "Lexxie Debug Stats", text_color = color.white, bgcolor = color.new(color.navy, 0), text_size = tableTextSize)
@@ -301,3 +314,7 @@ if showTable and barstate.islast
 
     table.cell(statsTable, 0, 7, "Risk : Reward", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
     table.cell(statsTable, 1, 7, "1 : " + str.tostring(rrRatio, "#.##"), text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+
+    worstDayText = na(worstDayPnL) ? "N/A" : "$" + str.tostring(worstDayPnL, "#.##") + " (" + worstDayDate + ")"
+    table.cell(statsTable, 0, 8, "Worst Day",   text_size = tableTextSize)
+    table.cell(statsTable, 1, 8, worstDayText,  text_size = tableTextSize, text_color = color.red)
