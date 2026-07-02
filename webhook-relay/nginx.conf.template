@@ -1,0 +1,15 @@
+# Copy to /etc/nginx/sites-available/lexxie-relay, replace YOUR_DOMAIN,
+# then: ln -s /etc/nginx/sites-available/lexxie-relay /etc/nginx/sites-enabled/
+# Run certbot afterwards to add the HTTPS block automatically.
+
+server {
+    listen 80;
+    server_name YOUR_DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Lexxie TradingView -> Bybit webhook relay
+After=network.target
+
+[Service]
+Type=simple
+User=lexxie
+WorkingDirectory=/opt/lexxie-relay
+ExecStart=/usr/bin/node /opt/lexxie-relay/server.js
+Restart=on-failure
+RestartSec=3
+EnvironmentFile=/opt/lexxie-relay/.env
+
+[Install]
+WantedBy=multi-user.target
