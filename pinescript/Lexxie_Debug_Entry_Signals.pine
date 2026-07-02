@@ -418,16 +418,25 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
         shortProfitBox := box.new(left = bar_index, top = close,    right = bar_index, bottom = shortTP, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
         shortLossBox   := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
-// Extend the active trade's SL/TP/Entry lines and zone boxes to follow price until the position closes.
-// The flag labels stay put at the entry bar - they don't travel with the line.
+// Extend the active trade's SL/TP/Entry lines, zone boxes, and price tags to follow
+// the current bar until the position closes - matching TradingView's native long/short
+// position tool, where the SL/Entry/TP tags ride the leading edge instead of staying
+// pinned back at the entry bar (which used to overlap later trades drawn inside the
+// same box). Only the BUY/SELL entry marker label stays fixed at the entry bar.
 if showSLTPLines and strategy.position_size > 0 and not na(longSLLine)
     line.set_x2(longSLLine, bar_index)
     line.set_x2(longTPLine, bar_index)
     line.set_x2(longEntryLine, bar_index)
+    label.set_x(longSLLabel, bar_index)
+    label.set_x(longTPLabel, bar_index)
+    label.set_x(longEntryLabel, bar_index)
 if showSLTPLines and strategy.position_size < 0 and not na(shortSLLine)
     line.set_x2(shortSLLine, bar_index)
     line.set_x2(shortTPLine, bar_index)
     line.set_x2(shortEntryLine, bar_index)
+    label.set_x(shortSLLabel, bar_index)
+    label.set_x(shortTPLabel, bar_index)
+    label.set_x(shortEntryLabel, bar_index)
 if showSLTPZones and strategy.position_size > 0 and not na(longProfitBox)
     box.set_right(longProfitBox, bar_index)
     box.set_right(longLossBox, bar_index)
