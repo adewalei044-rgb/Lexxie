@@ -100,6 +100,8 @@ grpLabels    = "Buy / Sell Entry Labels"
 showLabels   = input.bool(true, "Show Buy/Sell Entry Labels", group = grpLabels)
 buyColor     = input.color(color.new(color.green, 0), "Buy Label Color", group = grpLabels)
 sellColor    = input.color(color.new(color.red, 0),   "Sell Label Color", group = grpLabels)
+labelTextSize = input.string(size.tiny, "Buy/Sell Label Size",
+     options = [size.tiny, size.small, size.normal, size.large], group = grpLabels)
 
 grpSLTP       = "Stop Loss / Take Profit Lines"
 showSLTPLines = input.bool(true, "Show SL/TP Lines", group = grpSLTP)
@@ -397,7 +399,7 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
     f_deleteCurrentDrawings()
     if showLabels
         curEntryMarker := label.new(bar_index, low, "BUY\n" + longSignalText, style = label.style_label_up,
-             color = buyColor, textcolor = color.white, size = size.small)
+             color = buyColor, textcolor = color.white, size = labelTextSize)
     if useWebhookAlerts
         alert(longAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
@@ -421,7 +423,7 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     f_deleteCurrentDrawings()
     if showLabels
         curEntryMarker := label.new(bar_index, high, "SELL\n" + shortSignalText, style = label.style_label_down,
-             color = sellColor, textcolor = color.white, size = size.small)
+             color = sellColor, textcolor = color.white, size = labelTextSize)
     if useWebhookAlerts
         alert(shortAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
