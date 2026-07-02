@@ -79,7 +79,6 @@ rrRatio     = input.float(1.5, "Risk : Reward (1 : X)", minval = 0.1, step = 0.1
 
 grpDebug   = "Debug Mode"
 debugMode  = input.bool(true, "Enable Debug Mode (plot every detected pattern, even if not tradeable)", group = grpDebug)
-warnTf     = input.bool(true, "Warn if chart timeframe isn't 1 minute", group = grpDebug)
 
 grpLabels    = "Buy / Sell Entry Labels"
 showLabels   = input.bool(true, "Show Buy/Sell Entry Labels", group = grpLabels)
@@ -171,10 +170,6 @@ plotshape(debugMode and bullishSignalBar and barConfirmed, title = "Bull SigBar"
 plotshape(debugMode and bearishSignalBar and barConfirmed, title = "Bear SigBar",  style = shape.circle,        location = location.abovebar, color = color.new(color.orange,  0), size = size.tiny)
 plotshape(debugMode and bullishKeyBar    and barConfirmed, title = "Bull KeyBar",  style = shape.square,         location = location.belowbar, color = color.new(color.yellow,  0), size = size.tiny)
 plotshape(debugMode and bearishKeyBar    and barConfirmed, title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
-
-if warnTf and barstate.islast and timeframe.period != "1"
-    label.new(bar_index, high, "Recommended timeframe: 1 minute\n(current: " + timeframe.period + ")",
-         style = label.style_label_down, color = color.new(color.orange, 20), textcolor = color.black, size = size.small)
 
 // =====================================================================================
 // DEMAND / SUPPLY ZONES - visual only, does not affect trading
