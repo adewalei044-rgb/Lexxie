@@ -7,14 +7,14 @@ strategy("Lexxie - Debug Entry Signals (Engulfing / Signal Bar / Key Bar)",
      default_qty_value = 10,
      commission_type = strategy.commission.percent,
      commission_value = 0.02,
-     calc_on_every_tick = false,
+     calc_on_every_tick = true,
      process_orders_on_close = true,
      max_bars_back = 500)
 
-// NOTE ON REPAINTING: calc_on_every_tick is false and every signal/order below is gated
-// on barstate.isconfirmed, so nothing is evaluated, plotted, or traded off an unclosed,
-// still-forming bar. Signals only appear once, on the confirmed close of a bar, and never
-// move or disappear afterward.
+// NOTE ON REPAINTING: calc_on_every_tick is true so the stats table and plots update live,
+// tick by tick. Repainting is still prevented at the signal level: every pattern/order below
+// is separately gated on barstate.isconfirmed, so trades and pattern markers only fire once,
+// on the confirmed close of a bar, and never move or disappear afterward.
 
 // =====================================================================================
 // INPUTS
