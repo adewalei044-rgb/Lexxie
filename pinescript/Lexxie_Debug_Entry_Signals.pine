@@ -386,6 +386,8 @@ var float  dailyPnL         = 0.0
 var float  worstDayPnL      = na
 var string worstDayDate     = "-"
 var string dayLabel         = ""
+var array<float>  last30PnL   = array.new<float>()
+var array<string> last30Dates = array.new<string>()
 
 today      = str.format_time(time, "MM/dd")
 lastUpdate = str.format_time(time, "MM/dd HH:mm")
@@ -398,6 +400,11 @@ if newDay
     if na(worstDayPnL) or dailyPnL < worstDayPnL
         worstDayPnL  := dailyPnL
         worstDayDate := dayLabel
+    array.push(last30PnL, dailyPnL)
+    array.push(last30Dates, dayLabel)
+    if array.size(last30PnL) > 30
+        array.shift(last30PnL)
+        array.shift(last30Dates)
     dailyWins   := 0
     dailyLosses := 0
     dailyPnL    := 0.0
@@ -438,11 +445,14 @@ if drawdownNow > maxDrawdownPct
 totalTrades = totalWins + totalLosses
 winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
 
+worst30PnL  = array.size(last30PnL) > 0 ? array.min(last30PnL) : na
+worst30Date = array.size(last30PnL) > 0 ? array.get(last30Dates, array.indexof(last30PnL, worst30PnL)) : "-"
+
 // =====================================================================================
 // STATS TABLE - top right corner (position configurable)
 // =====================================================================================
 
-var table statsTable = table.new(tablePos, 2, 15, border_width = 1, border_color = color.new(color.gray, 0), frame_color = color.new(color.gray, 0), frame_width = 1)
+var table statsTable = table.new(tablePos, 2, 16, border_width = 1, border_color = color.new(color.gray, 0), frame_color = color.new(color.gray, 0), frame_width = 1)
 
 if showTable and barstate.islast
     table.cell(statsTable, 0, 0, "Lexxie Debug Stats", text_color = color.white, bgcolor = color.new(color.navy, 0), text_size = tableTextSize)
@@ -473,22 +483,26 @@ if showTable and barstate.islast
     table.cell(statsTable, 0, 8, "Wst Day",      text_size = tableTextSize)
     table.cell(statsTable, 1, 8, worstDayText,   text_size = tableTextSize, text_color = color.red)
 
-    table.cell(statsTable, 0, 9, "Wk Win",       text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
-    table.cell(statsTable, 1, 9, str.tostring(weekWins), text_size = tableTextSize, text_color = color.green, bgcolor = color.new(color.gray, 70))
+    worst30Text = na(worst30PnL) ? "N/A" : "$" + str.tostring(worst30PnL, "#.##") + " (" + worst30Date + ")"
+    table.cell(statsTable, 0, 9, "30D Worst",    text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 9, worst30Text,    text_size = tableTextSize, text_color = color.red, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 10, "Wk Loss",     text_size = tableTextSize)
-    table.cell(statsTable, 1, 10, str.tostring(weekLosses), text_size = tableTextSize, text_color = color.red)
+    table.cell(statsTable, 0, 10, "Wk Win",      text_size = tableTextSize)
+    table.cell(statsTable, 1, 10, str.tostring(weekWins), text_size = tableTextSize, text_color = color.green)
 
-    table.cell(statsTable, 0, 11, "MT Win",      text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
-    table.cell(statsTable, 1, 11, str.tostring(monthWins), text_size = tableTextSize, text_color = color.green, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 11, "Wk Loss",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 11, str.tostring(weekLosses), text_size = tableTextSize, text_color = color.red, bgcolor = color.new(color.gray, 70))
 
-    table.cell(statsTable, 0, 12, "MT Loss",     text_size = tableTextSize)
-    table.cell(statsTable, 1, 12, str.tostring(monthLosses), text_size = tableTextSize, text_color = color.red)
+    table.cell(statsTable, 0, 12, "MT Win",      text_size = tableTextSize)
+    table.cell(statsTable, 1, 12, str.tostring(monthWins), text_size = tableTextSize, text_color = color.green)
 
-    table.cell(statsTable, 0, 13, "Updated",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
-    table.cell(statsTable, 1, 13, lastUpdate,    text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 0, 13, "MT Loss",     text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 13, str.tostring(monthLosses), text_size = tableTextSize, text_color = color.red, bgcolor = color.new(color.gray, 70))
+
+    table.cell(statsTable, 0, 14, "Updated",     text_size = tableTextSize)
+    table.cell(statsTable, 1, 14, lastUpdate,    text_size = tableTextSize)
 
     rsiLevelText  = rsiValue >= rsiOverbought ? "OB" : rsiValue <= rsiOversold ? "OS" : "Neutral"
     rsiLevelColor = rsiValue >= rsiOverbought ? color.red : rsiValue <= rsiOversold ? color.green : color.gray
-    table.cell(statsTable, 0, 14, "RSI (" + str.tostring(rsiLen) + ")", text_size = tableTextSize)
-    table.cell(statsTable, 1, 14, str.tostring(rsiValue, "#.##") + " " + rsiLevelText, text_size = tableTextSize, text_color = rsiLevelColor)
+    table.cell(statsTable, 0, 15, "RSI (" + str.tostring(rsiLen) + ")", text_size = tableTextSize, bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 15, str.tostring(rsiValue, "#.##") + " " + rsiLevelText, text_size = tableTextSize, text_color = rsiLevelColor, bgcolor = color.new(color.gray, 70))
