@@ -105,13 +105,13 @@ sellColor    = input.color(color.new(color.red, 0),   "Sell Label Color", group 
 labelTextSize = input.string(size.tiny, "Buy/Sell Label Size",
      options = [size.tiny, size.small, size.normal, size.large], group = grpLabels)
 
-grpSLTP       = "Take Profit Tag / Zone Box"
-showSLTPLines = input.bool(true, "Show TP Tag", group = grpSLTP,
-     tooltip = "Simple 'TP' tag riding the take-profit level, nothing else - no SL or Entry line/label clutter.")
+grpSLTP       = "Entry / TP / SL Lines / Zone Box"
+showSLTPLines = input.bool(true, "Show Entry/TP/SL Lines", group = grpSLTP,
+     tooltip = "Entry, TP, and SL lines and tags for the open trade, aligned with the zone box's edges (TP = top of green zone, SL = bottom of red zone, Entry = the boundary between them).")
 showSLTPZones = input.bool(true, "Show Profit/Loss Zone Boxes", group = grpSLTP,
-     tooltip = "Independent of the tag above - shows/hides the shaded green (profit) and red (loss) zone boxes between entry and TP/SL.")
-slLineColor   = input.color(color.new(color.red, 0),  "Loss Zone Color", group = grpSLTP)
-tpLineColor   = input.color(color.new(color.teal, 0), "TP Tag / Profit Zone Color", group = grpSLTP)
+     tooltip = "Independent of the lines above - shows/hides the shaded green (profit) and red (loss) zone boxes between entry and TP/SL.")
+slLineColor   = input.color(color.new(color.red, 0),  "SL Line / Loss Zone Color", group = grpSLTP)
+tpLineColor   = input.color(color.new(color.teal, 0), "TP Line / Profit Zone Color", group = grpSLTP)
 
 grpWebhook       = "Webhook / Alerts"
 useWebhookAlerts = input.bool(false, "Fire alert() on entries (for webhook automation)", group = grpWebhook,
@@ -378,15 +378,22 @@ shortTP = close - shortRisk * rrRatio
 // Every trade keeps its own flag/tag/box - nothing is deleted. Trades never overlap in time
 // (only one position open at once), so each box only ever spans its own trade's bars and
 // stops extending the moment that trade closes, which keeps the chart clean without having
-// to erase history. Only the box/TP-tag of the currently OPEN trade keeps moving forward.
+// to erase history. Only the current OPEN trade's lines/tags/box keep moving forward.
+// Entry/TP/SL lines all align with the box: TP = top of the green zone, Entry = the
+// boundary between green and red, SL = bottom of the red zone.
 var line  curTPLine      = na
+var line  curEntryLine   = na
+var line  curSLLine      = na
 var label curTPLabel     = na
+var label curEntryLabel  = na
+var label curSLLabel     = na
 var box   curProfitBox   = na
 var box   curLossBox     = na
 
 profitBoxColor  = color.new(tpLineColor, 85)
 lossBoxColor    = color.new(slLineColor, 85)
 infoColor       = color.new(color.white, 100)
+entryLineColor  = color.new(color.blue, 0)
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
     longAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
@@ -402,8 +409,12 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
     if useWebhookAlerts
         alert(longAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
-        curTPLine  := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor, style = line.style_dashed, width = 1)
-        curTPLabel := label.new(bar_index, longTP, "TP", style = label.style_label_left, color = tpLineColor, textcolor = color.white, size = size.small)
+        curTPLine     := line.new(bar_index, longTP, bar_index, longTP, color = tpLineColor,    style = line.style_dashed, width = 1)
+        curEntryLine  := line.new(bar_index, close,  bar_index, close,  color = entryLineColor,  style = line.style_dashed, width = 1)
+        curSLLine     := line.new(bar_index, longSL, bar_index, longSL, color = slLineColor,     style = line.style_dashed, width = 1)
+        curTPLabel    := label.new(bar_index, longTP, "TP",    style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
+        curEntryLabel := label.new(bar_index, close,  "Entry", style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
+        curSLLabel    := label.new(bar_index, longSL, "SL",    style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
     if showSLTPZones
         curProfitBox := box.new(left = bar_index, top = longTP, right = bar_index, bottom = close, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
         curLossBox   := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
@@ -422,18 +433,27 @@ if shortSignal and strategy.position_size >= 0 and shortRisk > 0
     if useWebhookAlerts
         alert(shortAlertMsg, alert.freq_once_per_bar_close)
     if showSLTPLines
-        curTPLine  := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor, style = line.style_dashed, width = 1)
-        curTPLabel := label.new(bar_index, shortTP, "TP", style = label.style_label_left, color = tpLineColor, textcolor = color.white, size = size.small)
+        curTPLine     := line.new(bar_index, shortTP, bar_index, shortTP, color = tpLineColor,    style = line.style_dashed, width = 1)
+        curEntryLine  := line.new(bar_index, close,    bar_index, close,   color = entryLineColor, style = line.style_dashed, width = 1)
+        curSLLine     := line.new(bar_index, shortSL,  bar_index, shortSL, color = slLineColor,    style = line.style_dashed, width = 1)
+        curTPLabel    := label.new(bar_index, shortTP, "TP",    style = label.style_label_left, color = tpLineColor,    textcolor = color.white, size = size.small)
+        curEntryLabel := label.new(bar_index, close,   "Entry", style = label.style_label_left, color = entryLineColor, textcolor = color.white, size = size.small)
+        curSLLabel    := label.new(bar_index, shortSL, "SL",    style = label.style_label_left, color = slLineColor,    textcolor = color.white, size = size.small)
     if showSLTPZones
         curProfitBox := box.new(left = bar_index, top = close,    right = bar_index, bottom = shortTP, bgcolor = profitBoxColor, border_color = color.new(tpLineColor, 60))
         curLossBox   := box.new(left = bar_index, top = shortSL,  right = bar_index, bottom = close,   bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
-// Extend the active trade's TP tag and zone box to follow the current bar until the
-// position closes - this naturally stops the instant the trade exits, so it never creeps
-// into the next trade's bars.
+// Extend the active trade's Entry/TP/SL lines and zone box to follow the current bar until
+// the position closes - this naturally stops the instant the trade exits, so it never
+// creeps into the next trade's bars. All three lines stay aligned with the box edges since
+// they share the exact same price values the box was built from.
 if showSLTPLines and strategy.position_size != 0 and not na(curTPLine)
     line.set_x2(curTPLine, bar_index)
+    line.set_x2(curEntryLine, bar_index)
+    line.set_x2(curSLLine, bar_index)
     label.set_x(curTPLabel, bar_index)
+    label.set_x(curEntryLabel, bar_index)
+    label.set_x(curSLLabel, bar_index)
 if showSLTPZones and strategy.position_size != 0 and not na(curProfitBox)
     box.set_right(curProfitBox, bar_index)
     box.set_right(curLossBox, bar_index)
