@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
-const { placeMarketOrder, getOpenPositionQty } = require("./bybit");
+const broker = require("./brokers");
+const { placeMarketOrder, getOpenPositionQty } = broker;
 
 const app = express();
 
@@ -94,5 +95,5 @@ app.post("/hook/:secret", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    log(`Lexxie webhook relay listening on port ${PORT}`);
+    log(`Lexxie webhook relay listening on port ${PORT}, broker=${broker.name}`);
 });

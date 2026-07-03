@@ -97,3 +97,11 @@ To actually deliver it to your bot/bridge:
    (e.g. a broker bridge, Zapier, or your own server).
 4. Save. TradingView will POST the JSON message body to that URL whenever
    the alert fires.
+
+Two ready-made relays that turn this JSON into real orders live in this
+repo:
+
+- [`webhook-relay/`](webhook-relay/) - crypto exchanges (Bybit, Bitget),
+  runs on a cheap Linux VPS.
+- [`mt5-relay/`](mt5-relay/) - MetaTrader 5 brokers (Exness and others),
+  runs on a Windows VPS alongside the MT5 terminal.
