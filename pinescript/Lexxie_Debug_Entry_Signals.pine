@@ -119,19 +119,13 @@ useWebhookAlerts = input.bool(false, "Fire alert() on entries (for webhook autom
 
 grp3Commas   = "3Commas Webhook Format (optional)"
 use3Commas   = input.bool(false, "Format alert_message for 3Commas", group = grp3Commas,
-     tooltip = "ON: every alert_message is built in 3Commas' expected JSON format instead of the plain one above, so you can paste your 3Commas webhook URL straight into the TradingView alert with no separate relay server needed. OFF: uses the plain {symbol, action, price, stop, target, pattern, time} format, meant for the self-hosted relay in this repo.")
-three3BotType    = input.string("Signal Bot", "3Commas Bot Type", options = ["Signal Bot", "DCA Bot"], group = grp3Commas,
-     tooltip = "Signal Bot: one bot handles both long and short (direction is sent in the payload) - simplest, matches this script's single-alert design. DCA Bot: direction is fixed per bot in 3Commas, so long and short each need their own bot/bot ID.")
-three3EmailToken = input.string("", "3Commas Email Token", group = grp3Commas,
-     tooltip = "3Commas -> Profile -> API -> the webhook email token shown for your account (not an exchange API key).")
-three3Pair       = input.string("", "3Commas Pair Override (optional)", group = grp3Commas,
-     tooltip = "3Commas pair format, e.g. USDT_BTC. Leave blank to auto-build from the chart symbol (assumes a *USDT quote pair).")
-three3BotId      = input.int(0, "3Commas Bot ID (Signal Bot)", group = grp3Commas,
-     tooltip = "Used when Bot Type = Signal Bot. Found on the bot's page in 3Commas, or in its webhook setup instructions.")
-three3LongBotId  = input.int(0, "3Commas Long Bot ID (DCA Bot)", group = grp3Commas,
-     tooltip = "Used when Bot Type = DCA Bot. The bot configured to open/close LONG deals.")
-three3ShortBotId = input.int(0, "3Commas Short Bot ID (DCA Bot)", group = grp3Commas,
-     tooltip = "Used when Bot Type = DCA Bot. The bot configured to open/close SHORT deals. Leave 0 if you only trade long.")
+     tooltip = "ON: every alert_message is built in 3Commas' TradingView Custom Signal JSON format instead of the plain one above, so you can paste your 3Commas webhook URL straight into the TradingView alert with no separate relay server needed. OFF: uses the plain {symbol, action, price, stop, target, pattern, time} format, meant for the self-hosted relay in this repo. Use Alert Condition = 'Order fills' with this on, not 'Any alert() function call' - the {{strategy.*}} placeholders below only resolve correctly on real order fills.")
+three3Secret  = input.string("", "3Commas Secret", group = grp3Commas,
+     tooltip = "The long token from the \"secret\" field 3Commas shows on the bot's TradingView webhook setup page.")
+three3BotUuid = input.string("", "3Commas Bot UUID", group = grp3Commas,
+     tooltip = "The \"bot_uuid\" value from the same 3Commas webhook setup page.")
+three3MaxLag  = input.string("300", "Max Lag (seconds)", group = grp3Commas,
+     tooltip = "The \"max_lag\" value 3Commas suggests on the webhook setup page - how stale (in seconds) a signal can be before 3Commas ignores it. 300 is their usual default.")
 
 grpTable       = "Stats Table"
 showTable      = input.bool(true, "Show Stats Table", group = grpTable)
@@ -374,31 +368,20 @@ plotshape(debugMode and bullishKeyBar    and barConfirmed, title = "Bull KeyBar"
 plotshape(debugMode and bearishKeyBar    and barConfirmed, title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
 
 // =====================================================================================
-// 3COMMAS WEBHOOK FORMAT - only used when use3Commas is on; builds the JSON body
-// 3Commas expects instead of this script's plain {symbol, action, ...} format.
+// 3COMMAS WEBHOOK FORMAT - only used when use3Commas is on. This mirrors 3Commas'
+// "TradingView Custom Signal" webhook template exactly (as shown on their bot's webhook
+// setup page). Almost every field is a TradingView {{placeholder}} that gets substituted
+// automatically when the alert fires on a real order fill, so the SAME static message
+// works for every entry and exit - no need to build a different string per action.
 // =====================================================================================
 
-f_auto3CPair() =>
-    // Assumes a *USDT quote pair (e.g. BTCUSDT -> USDT_BTC). Use the pair override
-    // input above for anything else (different quote currency, futures naming, etc).
-    "USDT_" + str.replace_all(syminfo.ticker, "USDT", "")
-
-f_build3CommasMsg(action) =>
-    pairStr = three3Pair != "" ? three3Pair : f_auto3CPair()
-    isClose = action == "close_long" or action == "close_short"
-    msg = ""
-    if three3BotType == "Signal Bot"
-        msg := '{"message_type":"bot","bot_id":' + str.tostring(three3BotId) +
-             ',"email_token":"' + three3EmailToken + '","delay_seconds":0,"pair":"' + pairStr +
-             '","action":"' + action + '"}'
-    else
-        botId = (action == "buy" or action == "close_long") ? three3LongBotId : three3ShortBotId
-        msg := isClose ?
-             '{"message_type":"bot","bot_id":' + str.tostring(botId) +
-             ',"email_token":"' + three3EmailToken + '","delay_seconds":0,"action":"close_at_market_price"}' :
-             '{"message_type":"bot","bot_id":' + str.tostring(botId) +
-             ',"email_token":"' + three3EmailToken + '","delay_seconds":0}'
-    msg
+f_build3CommasMsg() =>
+    '{"secret":"' + three3Secret + '","max_lag":"' + three3MaxLag + '","timestamp":"{{timenow}}",' +
+     '"trigger_price":"{{close}}","tv_exchange":"{{exchange}}","tv_instrument":"{{ticker}}",' +
+     '"action":"{{strategy.order.action}}","bot_uuid":"' + three3BotUuid + '","strategy_info":{' +
+     '"market_position":"{{strategy.market_position}}","market_position_size":"{{strategy.market_position_size}}",' +
+     '"prev_market_position":"{{strategy.prev_market_position}}","prev_market_position_size":"{{strategy.prev_market_position_size}}"},' +
+     '"order":{"amount":"{{strategy.order.contracts}}","currency_type":"base"}}'
 
 // =====================================================================================
 // TRADE MANAGEMENT (Stop Loss / Take Profit)
@@ -439,11 +422,11 @@ infoColor       = color.new(color.white, 100)
 entryLineColor  = color.new(color.blue, 0)
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
-    longAlertMsg = use3Commas ? f_build3CommasMsg("buy") :
+    longAlertMsg = use3Commas ? f_build3CommasMsg() :
          '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
          '","action":"buy","price":' + str.tostring(close) + ',"stop":' + str.tostring(longSL) + ',"target":' + str.tostring(longTP) +
          ',"pattern":"' + longSignalText + '","time":"' + str.tostring(time) + '"}'
-    longCloseMsg = use3Commas ? f_build3CommasMsg("close_long") :
+    longCloseMsg = use3Commas ? f_build3CommasMsg() :
          '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_long","price":{{strategy.order.price}},"time":"{{time}}"}'
     strategy.entry("Long", strategy.long, alert_message = longAlertMsg)
     strategy.exit("Long Exit", "Long", stop = longSL, limit = longTP, alert_message = longCloseMsg)
@@ -465,11 +448,11 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
         curLossBox   := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
 if shortSignal and strategy.position_size >= 0 and shortRisk > 0
-    shortAlertMsg = use3Commas ? f_build3CommasMsg("sell") :
+    shortAlertMsg = use3Commas ? f_build3CommasMsg() :
          '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
          '","action":"sell","price":' + str.tostring(close) + ',"stop":' + str.tostring(shortSL) + ',"target":' + str.tostring(shortTP) +
          ',"pattern":"' + shortSignalText + '","time":"' + str.tostring(time) + '"}'
-    shortCloseMsg = use3Commas ? f_build3CommasMsg("close_short") :
+    shortCloseMsg = use3Commas ? f_build3CommasMsg() :
          '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_short","price":{{strategy.order.price}},"time":"{{time}}"}'
     strategy.entry("Short", strategy.short, alert_message = shortAlertMsg)
     strategy.exit("Short Exit", "Short", stop = shortSL, limit = shortTP, alert_message = shortCloseMsg)
