@@ -117,6 +117,22 @@ grpWebhook       = "Webhook / Alerts"
 useWebhookAlerts = input.bool(false, "Fire alert() on entries (for webhook automation)", group = grpWebhook,
      tooltip = "Pine Script cannot POST to a URL by itself. This only fires the alert() event inside the script - you still need to create a TradingView Alert on this script (Condition: 'Any alert() function call', or 'Order fills' for entries+exits) and paste your endpoint under Notifications -> Webhook URL.")
 
+grp3Commas   = "3Commas Webhook Format (optional)"
+use3Commas   = input.bool(false, "Format alert_message for 3Commas", group = grp3Commas,
+     tooltip = "ON: every alert_message is built in 3Commas' expected JSON format instead of the plain one above, so you can paste your 3Commas webhook URL straight into the TradingView alert with no separate relay server needed. OFF: uses the plain {symbol, action, price, stop, target, pattern, time} format, meant for the self-hosted relay in this repo.")
+three3BotType    = input.string("Signal Bot", "3Commas Bot Type", options = ["Signal Bot", "DCA Bot"], group = grp3Commas,
+     tooltip = "Signal Bot: one bot handles both long and short (direction is sent in the payload) - simplest, matches this script's single-alert design. DCA Bot: direction is fixed per bot in 3Commas, so long and short each need their own bot/bot ID.")
+three3EmailToken = input.string("", "3Commas Email Token", group = grp3Commas,
+     tooltip = "3Commas -> Profile -> API -> the webhook email token shown for your account (not an exchange API key).")
+three3Pair       = input.string("", "3Commas Pair Override (optional)", group = grp3Commas,
+     tooltip = "3Commas pair format, e.g. USDT_BTC. Leave blank to auto-build from the chart symbol (assumes a *USDT quote pair).")
+three3BotId      = input.int(0, "3Commas Bot ID (Signal Bot)", group = grp3Commas,
+     tooltip = "Used when Bot Type = Signal Bot. Found on the bot's page in 3Commas, or in its webhook setup instructions.")
+three3LongBotId  = input.int(0, "3Commas Long Bot ID (DCA Bot)", group = grp3Commas,
+     tooltip = "Used when Bot Type = DCA Bot. The bot configured to open/close LONG deals.")
+three3ShortBotId = input.int(0, "3Commas Short Bot ID (DCA Bot)", group = grp3Commas,
+     tooltip = "Used when Bot Type = DCA Bot. The bot configured to open/close SHORT deals. Leave 0 if you only trade long.")
+
 grpTable       = "Stats Table"
 showTable      = input.bool(true, "Show Stats Table", group = grpTable)
 tablePos       = input.string(position.top_right, "Table Position",
@@ -358,6 +374,33 @@ plotshape(debugMode and bullishKeyBar    and barConfirmed, title = "Bull KeyBar"
 plotshape(debugMode and bearishKeyBar    and barConfirmed, title = "Bear KeyBar",  style = shape.square,         location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.tiny)
 
 // =====================================================================================
+// 3COMMAS WEBHOOK FORMAT - only used when use3Commas is on; builds the JSON body
+// 3Commas expects instead of this script's plain {symbol, action, ...} format.
+// =====================================================================================
+
+f_auto3CPair() =>
+    // Assumes a *USDT quote pair (e.g. BTCUSDT -> USDT_BTC). Use the pair override
+    // input above for anything else (different quote currency, futures naming, etc).
+    "USDT_" + str.replace_all(syminfo.ticker, "USDT", "")
+
+f_build3CommasMsg(action) =>
+    pairStr = three3Pair != "" ? three3Pair : f_auto3CPair()
+    isClose = action == "close_long" or action == "close_short"
+    msg = ""
+    if three3BotType == "Signal Bot"
+        msg := '{"message_type":"bot","bot_id":' + str.tostring(three3BotId) +
+             ',"email_token":"' + three3EmailToken + '","delay_seconds":0,"pair":"' + pairStr +
+             '","action":"' + action + '"}'
+    else
+        botId = (action == "buy" or action == "close_long") ? three3LongBotId : three3ShortBotId
+        msg := isClose ?
+             '{"message_type":"bot","bot_id":' + str.tostring(botId) +
+             ',"email_token":"' + three3EmailToken + '","delay_seconds":0,"action":"close_at_market_price"}' :
+             '{"message_type":"bot","bot_id":' + str.tostring(botId) +
+             ',"email_token":"' + three3EmailToken + '","delay_seconds":0}'
+    msg
+
+// =====================================================================================
 // TRADE MANAGEMENT (Stop Loss / Take Profit)
 // =====================================================================================
 
@@ -396,12 +439,14 @@ infoColor       = color.new(color.white, 100)
 entryLineColor  = color.new(color.blue, 0)
 
 if longSignal and strategy.position_size <= 0 and longRisk > 0
-    longAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
+    longAlertMsg = use3Commas ? f_build3CommasMsg("buy") :
+         '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
          '","action":"buy","price":' + str.tostring(close) + ',"stop":' + str.tostring(longSL) + ',"target":' + str.tostring(longTP) +
          ',"pattern":"' + longSignalText + '","time":"' + str.tostring(time) + '"}'
+    longCloseMsg = use3Commas ? f_build3CommasMsg("close_long") :
+         '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_long","price":{{strategy.order.price}},"time":"{{time}}"}'
     strategy.entry("Long", strategy.long, alert_message = longAlertMsg)
-    strategy.exit("Long Exit", "Long", stop = longSL, limit = longTP,
-         alert_message = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_long","price":{{strategy.order.price}},"time":"{{time}}"}')
+    strategy.exit("Long Exit", "Long", stop = longSL, limit = longTP, alert_message = longCloseMsg)
     if showLabels
         label.new(bar_index, low, "Buy", style = label.style_label_up, color = buyColor, textcolor = color.white, size = labelTextSize)
         label.new(bar_index, low - atrTrade * 0.6, "LE\n" + str.tostring(close, format.mintick), style = label.style_label_up,
@@ -420,12 +465,14 @@ if longSignal and strategy.position_size <= 0 and longRisk > 0
         curLossBox   := box.new(left = bar_index, top = close,  right = bar_index, bottom = longSL, bgcolor = lossBoxColor,  border_color = color.new(slLineColor, 60))
 
 if shortSignal and strategy.position_size >= 0 and shortRisk > 0
-    shortAlertMsg = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
+    shortAlertMsg = use3Commas ? f_build3CommasMsg("sell") :
+         '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period +
          '","action":"sell","price":' + str.tostring(close) + ',"stop":' + str.tostring(shortSL) + ',"target":' + str.tostring(shortTP) +
          ',"pattern":"' + shortSignalText + '","time":"' + str.tostring(time) + '"}'
+    shortCloseMsg = use3Commas ? f_build3CommasMsg("close_short") :
+         '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_short","price":{{strategy.order.price}},"time":"{{time}}"}'
     strategy.entry("Short", strategy.short, alert_message = shortAlertMsg)
-    strategy.exit("Short Exit", "Short", stop = shortSL, limit = shortTP,
-         alert_message = '{"strategy":"Lexxie Debug Entries","symbol":"' + syminfo.ticker + '","action":"close_short","price":{{strategy.order.price}},"time":"{{time}}"}')
+    strategy.exit("Short Exit", "Short", stop = shortSL, limit = shortTP, alert_message = shortCloseMsg)
     if showLabels
         label.new(bar_index, high, "Sell", style = label.style_label_down, color = sellColor, textcolor = color.white, size = labelTextSize)
         label.new(bar_index, high + atrTrade * 0.6, "SE\n" + str.tostring(close, format.mintick), style = label.style_label_down,
