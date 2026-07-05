@@ -25,6 +25,13 @@ Build a TradingView Pine Script (v6) `indicator()` named **NojaiBTC**,
    all-time and renders it in a live on-chart performance dashboard
    ("JMHP ENHANCED").
 6. Fires alerts on signal/TP/SL/exit events.
+7. **Must not repaint**: BUY/SELL signals, entry/SL/TP lines, and labels are
+   calculated only from confirmed (closed) bar data — no `lookahead=on`,
+   no referencing unconfirmed higher-timeframe values, no logic that can
+   move or delete a signal already printed on a closed bar. Once a signal
+   is drawn on a closed bar it is final. Only the dashboard's live counters
+   (per the "must display on time" rule) are allowed to update on the
+   in-progress bar — the historical signals themselves never change.
 
 ## Inputs — group and order exactly as below
 
