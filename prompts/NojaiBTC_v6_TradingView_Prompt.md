@@ -94,52 +94,62 @@ Build a TradingView Pine Script (v6) `indicator()` named **NojaiBTC**,
 Enable on every resolution: Ticks, Seconds (1–59), Minutes (1–59),
 Hours (1–24), Days (1–366), Weeks (1–52), Months (1–12), Ranges.
 
-## Signal / trade logic
+## Chart drawing elements — exactly as shown in the reference screenshot
 
-- **Entry channel**: Donchian-style upper/lower channel over
-  `Entry Channel Length` bars, widened/tightened by `Sensitivity`.
-  `Buffer %` is added to the upper bound and subtracted from the lower bound
-  to reduce false breakouts.
-- **Trend filter**: EMA(`EMA Period`). Only take BUY signals when price is
-  above the EMA and the breakout is up; only take SELL signals when price is
-  below the EMA and the breakout is down.
-- **Structure exit**: detect pivot highs/lows with `Structure Pivot Length`;
-  exit an open trade when price breaks the most recent opposing pivot within
-  `Structure Exit Lookback` bars. Draw an exit label on the bar when
-  `Show Exit Labels?` is enabled.
-- **ATR trailing stop**: ATR(`ATR Period`) trailing stop (UT Bot style)
-  plotted as a stepped line; when `Exit on UT Trailing Stop?` is enabled, a
-  trailing-stop cross also force-closes the open trade.
-- **Stop loss**: derived from the most recent swing high/low using
-  `Swing Detection Length`, offset by `Buffer %`.
-- **Take profit**: TP1 = entry ± initial risk × `Risk Reward Ratio 1` ×
-  `TP Multiplier`; TP2 = entry ± initial risk × `Risk Reward Ratio 2` ×
-  `TP Multiplier`.
-- **Break-even**: if `Enable Break-Even at TP1` is on, move the stop to the
-  entry price once TP1 is touched.
-- **Position sizing**: use `Max Risk % per trade` against `Base Amount ($)`
-  and `Lot Size` to compute the simulated $ P&L per closed trade for the
-  dashboard.
+These are transcribed directly from the live chart image (not inferred):
 
-## Chart drawing elements
+- **SELL label**: solid red rounded tag with the word "SELL", placed directly
+  above the signal candle.
+- **SL line**: red dotted horizontal line extending right from the signal,
+  with a red flag tag reading `"SL: 62319.5"`.
+- **Entry line**: solid black/dark horizontal line extending right from the
+  signal, with a red flag tag reading `"SELL: 62048.5"`.
+- **TP1 line**: blue dotted horizontal line extending right, with a blue tag
+  reading `"TP1: 61777.5"` and a green checkmark next to it (indicating that
+  level was reached).
+- **TP2 line**: blue dotted horizontal line extending right, with a blue tag
+  reading `"TP2: 61506.5"` (no checkmark — not yet reached).
+- **EMA line**: an orange/tan line running through price, with several small
+  hollow circle markers sitting on it at intervals.
+- A separate floating text box, **not part of NojaiBTC**, reading
+  "Institutional MACD Bias / Short Term: Look For Buy Only / Long Term: Look
+  For Buy Only / Overall Bias: Look For Buy Only".
 
-- **BUY label**: green rounded tag, up-arrow icon, text "BUY", below the
-  signal bar. Color from `Buy Text Color`.
-- **SELL label**: red rounded tag, down-arrow icon, text "SELL", above the
-  signal bar. Color from `Sell Text Color`.
-- **Entry line**: solid dark line projected `Line Length` bars forward from
-  the entry bar, tagged `"BUY: <price>"` or `"SELL: <price>"`.
-- **SL line**: dotted red line, `Line Length` bars forward, tagged
-  `"SL: <price>"`.
-- **TP1 / TP2 lines**: dotted blue lines, `Line Length` bars forward, tagged
-  `"TP1: <price>"` / `"TP2: <price>"`; append a green checkmark to the tag
-  once that level is touched. Only drawn when `Show TP/SL Lines?` is on.
-- **Entry channels**: optional upper/lower channel lines, only drawn when
-  `Show Entry Channels?` is on.
-- **EMA line**: orange plot of EMA(`EMA Period`) over price.
-- **RSI gradient bars**: when `Enable RSI Gradient Bars` is on, recolor
-  candle bodies on a gradient keyed off RSI(`RSI Length`) — cool color near
-  oversold, warm color near overbought.
+Only build the BUY label, SELL label, entry line, SL line, TP1 line, and TP2
+line as literally shown above. Everything else below this point (channel
+lines, RSI gradient bars, break-even, alerts, dashboard counters) should
+follow the **Inputs** section, since those are the only toggles/values the
+screenshots actually expose for them.
+
+## Signal / trade logic — inferred from input names only (verify before building)
+
+The screenshots show the **settings and outputs**, not the Pine Script source,
+so the exact formulas below are a reasonable reading of the input labels, not
+confirmed logic. Treat this section as a starting hypothesis to confirm with
+whoever owns the original script, not as ground truth:
+
+- **Entry channel**: some form of upper/lower breakout channel over
+  `Entry Channel Length` bars, adjusted by `Sensitivity`, with `Buffer %`
+  padding the channel bounds — implied by the "Entry Channel Length",
+  "Sensitivity", and "Buffer %" input names and the (unchecked) "Show Entry
+  Channels?" toggle.
+- **Trend filter**: EMA(`EMA Period`) is plotted on the chart, so it is
+  likely used as a directional filter, but the screenshots don't show how.
+- **Structure exit**: `Structure Pivot Length` and `Structure Exit Lookback`
+  imply a pivot-based structure exit, with `Show Exit Labels?` controlling
+  whether exit markers are drawn — not otherwise confirmed.
+- **Trailing stop**: `ATR Period (for trailing stop)` and `Exit on UT
+  Trailing Stop?` imply an ATR-based trailing stop that can optionally force
+  an exit — not otherwise confirmed.
+- **Take profit**: `Risk Reward Ratio 1` / `Risk Reward Ratio 2` and
+  `TP Multiplier` imply TP1/TP2 are risk-multiples of the stop distance,
+  consistent with the two TP lines seen on the chart — not otherwise
+  confirmed.
+- **Break-even**: `Enable Break-Even at TP1` implies the stop moves to entry
+  once TP1 is hit — not otherwise confirmed.
+- **Position sizing**: `Max Risk % per trade`, `Base Amount ($)`, and
+  `Lot Size` imply the dashboard's $ P&L figures are derived from these —
+  not otherwise confirmed.
 
 ## Dashboard ("JMHP ENHANCED" performance table)
 
