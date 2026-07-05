@@ -136,9 +136,9 @@ var float weekPnl      = 0.0
 var float monthPnl     = 0.0
 var float totalPnl     = 0.0
 
-newDay   = ta.change(time("D"))
-newWeek  = ta.change(time("W"))
-newMonth = ta.change(time("M"))
+newDay   = ta.change(time("D")) != 0
+newWeek  = ta.change(time("W")) != 0
+newMonth = ta.change(time("M")) != 0
 
 if newDay
     dailyWins   := 0
@@ -197,7 +197,7 @@ if newLong
         tp2Tag  := label.new(bar_index + lineLength, tp2Price, "TP2: " + str.tostring(tp2Price, format.mintick), style = label.style_label_left, color = color.new(color.blue, 0), textcolor = color.white)
 
     if enableBuySellLbl
-        label.new(bar_index, low, "BUY", style = label.style_label_up, location = location.belowbar, color = buyTextColor, textcolor = color.white, size = size.small)
+        label.new(bar_index, low, "BUY", style = label.style_label_up, color = buyTextColor, textcolor = color.white, size = size.small)
 
     if enableAlerts
         alert("NojaiBTC: BUY signal at " + str.tostring(close), alert.freq_once_per_bar_close)
@@ -235,7 +235,7 @@ if newShort
         tp2Tag  := label.new(bar_index + lineLength, tp2Price, "TP2: " + str.tostring(tp2Price, format.mintick), style = label.style_label_left, color = color.new(color.blue, 0), textcolor = color.white)
 
     if enableBuySellLbl
-        label.new(bar_index, high, "SELL", style = label.style_label_down, location = location.abovebar, color = sellTextColor, textcolor = color.white, size = size.small)
+        label.new(bar_index, high, "SELL", style = label.style_label_down, color = sellTextColor, textcolor = color.white, size = size.small)
 
     if enableAlerts
         alert("NojaiBTC: SELL signal at " + str.tostring(close), alert.freq_once_per_bar_close)
