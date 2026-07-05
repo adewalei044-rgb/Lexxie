@@ -158,7 +158,12 @@ whoever owns the original script, not as ground truth:
 ## Dashboard ("JMHP ENHANCED" performance table)
 
 Top-right table, rendered only when `Show Dashboard?` is true. Two columns
-(label | value), rows and background colors as below:
+(label | value), rows and background colors as below.
+
+**Must display on time**: the table is drawn/updated on every realtime tick
+(`barstate.islast`), not only on bar close, so it never shows stale values —
+`Status`, `Current Signal`, `Entry Time`, and every P&L/win-loss figure must
+reflect the current bar the instant it changes, with no lag behind price.
 
 | Row | Sample value | Background |
 |---|---|---|
