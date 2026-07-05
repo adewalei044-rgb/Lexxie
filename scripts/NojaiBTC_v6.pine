@@ -1,0 +1,420 @@
+//@version=6
+// NojaiBTC v6 — bidirectional channel-breakout indicator with structure/ATR
+// exits, dual TP targets, RSI gradient bars, and a live performance
+// dashboard. Signals are computed only from confirmed bar data (no
+// lookahead, no request.security) so nothing repaints once printed.
+indicator("NojaiBTC", overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+sensitivity        = input.int(4, "Sensitivity", minval = 1, group = "General")
+entryChannelLen    = input.int(15, "Entry Channel Length", minval = 1, group = "General")
+structExitLookback = input.int(14, "Structure Exit Lookback", minval = 1, group = "General")
+showExitLabels     = input.bool(false, "Show Exit Labels?", group = "General")
+tpMultiplier       = input.float(1.0, "TP Multiplier", minval = 0.01, group = "General")
+atrPeriod          = input.int(10, "ATR Period (for trailing stop)", minval = 1, group = "General")
+structPivotLen     = input.int(5, "Structure Pivot Length", minval = 1, group = "General")
+bufferPct          = input.float(0.001, "Buffer % (e.g. 0.007 = 0.7%)", minval = 0.0, step = 0.001, group = "General")
+showEntryChannels  = input.bool(false, "Show Entry Channels?", group = "General")
+showTpSlLines      = input.bool(true, "Show TP/SL Lines?", group = "General")
+exitOnUtStop       = input.bool(false, "Exit on UT Trailing Stop?", group = "General")
+emaPeriod          = input.int(200, "EMA Period", minval = 1, group = "General")
+showDashboard      = input.bool(true, "Show Dashboard?", group = "General")
+
+enableRsiGradient  = input.bool(false, "Enable RSI Gradient Bars", group = "Visuals")
+enableBuySellLbl   = input.bool(true, "Enable Buy/Sell Labels", group = "Visuals")
+
+enableAlerts       = input.bool(true, "Enable Alerts", group = "Alerts")
+
+enablePeakTracker  = input.bool(true, "Enable Peak Profit Tracker", group = "Extras")
+
+rr1                = input.float(1.0, "Risk Reward Ratio 1", minval = 0.01, group = "Risk Management")
+rr2                = input.float(2.0, "Risk Reward Ratio 2", minval = 0.01, group = "Risk Management")
+lineLength         = input.int(60, "Line Length", minval = 1, group = "Risk Management")
+swingDetectLen     = input.int(10, "Swing Detection Length", minval = 1, group = "Risk Management")
+maxRiskPct         = input.float(0.1, "Max Risk % per trade", minval = 0.0, step = 0.01, group = "Risk Management")
+enableBreakEven    = input.bool(false, "Enable Break-Even at TP1", group = "Risk Management")
+
+baseAmount         = input.float(100, "Base Amount ($)", minval = 0, group = "P&L Tracking")
+lotSize            = input.float(0.05, "Lot Size", minval = 0.0, group = "P&L Tracking")
+rsiLength          = input.int(14, "RSI Length", minval = 1, group = "P&L Tracking")
+titleTextColor     = input.color(color.yellow, "Title Text Color", group = "P&L Tracking")
+titleBgColor       = input.color(color.black, "Title Background", group = "P&L Tracking")
+buyTextColor       = input.color(color.green, "Buy Text Color", group = "P&L Tracking")
+sellTextColor      = input.color(color.red, "Sell Text Color", group = "P&L Tracking")
+dashboardBgColor   = input.color(color.black, "Dashboard Background", group = "P&L Tracking")
+
+// ============================================================================
+// CORE SERIES
+// ============================================================================
+emaValue = ta.ema(close, emaPeriod)
+atrValue = ta.atr(atrPeriod)
+rsiValue = ta.rsi(close, rsiLength)
+
+plot(emaValue, title = "EMA", color = color.orange)
+
+gradColor = color.from_gradient(rsiValue, 30, 70, color.blue, color.red)
+barcolor(enableRsiGradient ? gradColor : na)
+
+// ============================================================================
+// ENTRY CHANNEL (Donchian-style, buffered, sensitivity-filtered)
+// ============================================================================
+upperRaw = ta.highest(high, entryChannelLen)
+lowerRaw = ta.lowest(low, entryChannelLen)
+chBuffer = (upperRaw - lowerRaw) * bufferPct
+upperChannel = upperRaw + chBuffer
+lowerChannel = lowerRaw - chBuffer
+
+plot(showEntryChannels ? upperChannel : na, title = "Entry Channel Upper", color = color.gray)
+plot(showEntryChannels ? lowerChannel : na, title = "Entry Channel Lower", color = color.gray)
+
+minBreakoutDist = atrValue * (sensitivity * 0.1)
+
+longBreak  = close > upperChannel[1] and (close - upperChannel[1]) >= minBreakoutDist and close > emaValue
+shortBreak = close < lowerChannel[1] and (lowerChannel[1] - close) >= minBreakoutDist and close < emaValue
+
+// ============================================================================
+// STRUCTURE PIVOTS
+// ============================================================================
+pivHigh = ta.pivothigh(high, structPivotLen, structPivotLen)
+pivLow  = ta.pivotlow(low, structPivotLen, structPivotLen)
+
+var float lastPivHigh = na
+var float lastPivLow  = na
+if not na(pivHigh)
+    lastPivHigh := pivHigh
+if not na(pivLow)
+    lastPivLow := pivLow
+
+// ============================================================================
+// ATR TRAILING STOP (UT-Bot style)
+// ============================================================================
+var float trailStop = na
+trailStop := close > nz(trailStop[1], close) and close[1] > nz(trailStop[1], close[1]) ? math.max(nz(trailStop[1], close - atrValue), close - atrValue) :
+             close < nz(trailStop[1], close) and close[1] < nz(trailStop[1], close[1]) ? math.min(nz(trailStop[1], close + atrValue), close + atrValue) :
+             close > nz(trailStop[1], close) ? close - atrValue : close + atrValue
+
+utBuyCross  = close > trailStop and close[1] <= nz(trailStop[1], close[1])
+utSellCross = close < trailStop and close[1] >= nz(trailStop[1], close[1])
+
+// ============================================================================
+// POSITION STATE
+// ============================================================================
+var string posDir       = ""   // "LONG" / "SHORT" / ""
+var float  entryPrice   = na
+var float  slPrice      = na
+var float  tp1Price     = na
+var float  tp2Price     = na
+var bool   tp1Hit        = false
+var int    entryBarIndex = na
+var int    entryTime     = na
+var float  peakProfit    = 0.0
+
+var line  entryLine = na
+var line  slLine    = na
+var line  tp1Line   = na
+var line  tp2Line   = na
+var label entryTag  = na
+var label slTag     = na
+var label tp1Tag    = na
+var label tp2Tag    = na
+
+// ---- P&L / stat counters ----
+var int   totalWins    = 0
+var int   totalLosses  = 0
+var int   totalBE      = 0
+var int   dailyWins    = 0
+var int   dailyLosses  = 0
+var int   weeklyWins   = 0
+var int   weeklyLosses = 0
+var int   monthWins    = 0
+var int   monthLosses  = 0
+var int   beWeek       = 0
+var int   beMonth      = 0
+var float weekPnl      = 0.0
+var float monthPnl     = 0.0
+var float totalPnl     = 0.0
+
+newDay   = ta.change(time("D"))
+newWeek  = ta.change(time("W"))
+newMonth = ta.change(time("M"))
+
+if newDay
+    dailyWins   := 0
+    dailyLosses := 0
+if newWeek
+    weeklyWins   := 0
+    weeklyLosses := 0
+    weekPnl      := 0.0
+    beWeek       := 0
+if newMonth
+    monthWins   := 0
+    monthLosses := 0
+    monthPnl    := 0.0
+    beMonth     := 0
+
+// ============================================================================
+// ENTRIES (bidirectional — long and short)
+// ============================================================================
+canEnter = posDir == ""
+newLong  = canEnter and longBreak
+newShort = canEnter and shortBreak
+
+swingLow  = ta.lowest(low, swingDetectLen)
+swingHigh = ta.highest(high, swingDetectLen)
+
+if newLong
+    posDir        := "LONG"
+    entryPrice    := close
+    slPrice       := swingLow - swingLow * bufferPct
+    riskAmtL      = entryPrice - slPrice
+    tp1Price      := entryPrice + riskAmtL * rr1 * tpMultiplier
+    tp2Price      := entryPrice + riskAmtL * rr2 * tpMultiplier
+    tp1Hit        := false
+    entryBarIndex := bar_index
+    entryTime     := time
+    peakProfit    := 0.0
+
+    line.delete(entryLine)
+    line.delete(slLine)
+    line.delete(tp1Line)
+    line.delete(tp2Line)
+    label.delete(entryTag)
+    label.delete(slTag)
+    label.delete(tp1Tag)
+    label.delete(tp2Tag)
+
+    entryLine := line.new(bar_index, entryPrice, bar_index + lineLength, entryPrice, color = color.black, width = 2)
+    entryTag  := label.new(bar_index + lineLength, entryPrice, "BUY: " + str.tostring(entryPrice, format.mintick), style = label.style_label_left, color = color.new(color.red, 0), textcolor = color.white)
+
+    if showTpSlLines
+        slLine  := line.new(bar_index, slPrice, bar_index + lineLength, slPrice, color = color.red, style = line.style_dotted)
+        slTag   := label.new(bar_index + lineLength, slPrice, "SL: " + str.tostring(slPrice, format.mintick), style = label.style_label_left, color = color.new(color.red, 0), textcolor = color.white)
+        tp1Line := line.new(bar_index, tp1Price, bar_index + lineLength, tp1Price, color = color.blue, style = line.style_dotted)
+        tp1Tag  := label.new(bar_index + lineLength, tp1Price, "TP1: " + str.tostring(tp1Price, format.mintick), style = label.style_label_left, color = color.new(color.blue, 0), textcolor = color.white)
+        tp2Line := line.new(bar_index, tp2Price, bar_index + lineLength, tp2Price, color = color.blue, style = line.style_dotted)
+        tp2Tag  := label.new(bar_index + lineLength, tp2Price, "TP2: " + str.tostring(tp2Price, format.mintick), style = label.style_label_left, color = color.new(color.blue, 0), textcolor = color.white)
+
+    if enableBuySellLbl
+        label.new(bar_index, low, "BUY", style = label.style_label_up, location = location.belowbar, color = buyTextColor, textcolor = color.white, size = size.small)
+
+    if enableAlerts
+        alert("NojaiBTC: BUY signal at " + str.tostring(close), alert.freq_once_per_bar_close)
+
+if newShort
+    posDir        := "SHORT"
+    entryPrice    := close
+    slPrice       := swingHigh + swingHigh * bufferPct
+    riskAmtS      = slPrice - entryPrice
+    tp1Price      := entryPrice - riskAmtS * rr1 * tpMultiplier
+    tp2Price      := entryPrice - riskAmtS * rr2 * tpMultiplier
+    tp1Hit        := false
+    entryBarIndex := bar_index
+    entryTime     := time
+    peakProfit    := 0.0
+
+    line.delete(entryLine)
+    line.delete(slLine)
+    line.delete(tp1Line)
+    line.delete(tp2Line)
+    label.delete(entryTag)
+    label.delete(slTag)
+    label.delete(tp1Tag)
+    label.delete(tp2Tag)
+
+    entryLine := line.new(bar_index, entryPrice, bar_index + lineLength, entryPrice, color = color.black, width = 2)
+    entryTag  := label.new(bar_index + lineLength, entryPrice, "SELL: " + str.tostring(entryPrice, format.mintick), style = label.style_label_left, color = color.new(color.red, 0), textcolor = color.white)
+
+    if showTpSlLines
+        slLine  := line.new(bar_index, slPrice, bar_index + lineLength, slPrice, color = color.red, style = line.style_dotted)
+        slTag   := label.new(bar_index + lineLength, slPrice, "SL: " + str.tostring(slPrice, format.mintick), style = label.style_label_left, color = color.new(color.red, 0), textcolor = color.white)
+        tp1Line := line.new(bar_index, tp1Price, bar_index + lineLength, tp1Price, color = color.blue, style = line.style_dotted)
+        tp1Tag  := label.new(bar_index + lineLength, tp1Price, "TP1: " + str.tostring(tp1Price, format.mintick), style = label.style_label_left, color = color.new(color.blue, 0), textcolor = color.white)
+        tp2Line := line.new(bar_index, tp2Price, bar_index + lineLength, tp2Price, color = color.blue, style = line.style_dotted)
+        tp2Tag  := label.new(bar_index + lineLength, tp2Price, "TP2: " + str.tostring(tp2Price, format.mintick), style = label.style_label_left, color = color.new(color.blue, 0), textcolor = color.white)
+
+    if enableBuySellLbl
+        label.new(bar_index, high, "SELL", style = label.style_label_down, location = location.abovebar, color = sellTextColor, textcolor = color.white, size = size.small)
+
+    if enableAlerts
+        alert("NojaiBTC: SELL signal at " + str.tostring(close), alert.freq_once_per_bar_close)
+
+plotshape(newLong,  title = "Buy Signal",  style = shape.triangleup,   location = location.belowbar, color = buyTextColor,  size = size.tiny)
+plotshape(newShort, title = "Sell Signal", style = shape.triangledown, location = location.abovebar, color = sellTextColor, size = size.tiny)
+
+// ============================================================================
+// EXITS (structure pivot / ATR trailing stop / TP1-TP2 / SL / break-even)
+// ============================================================================
+tp1JustHitLong  = false
+tp1JustHitShort = false
+exitPriceLong   = float(na)
+exitReasonLong  = string(na)
+exitPriceShort  = float(na)
+exitReasonShort = string(na)
+
+if posDir == "LONG"
+    peakProfit := math.max(peakProfit, close - entryPrice)
+    if not tp1Hit and high >= tp1Price
+        tp1Hit         := true
+        tp1JustHitLong := true
+        if enableBreakEven
+            slPrice := entryPrice
+    if low <= slPrice
+        exitPriceLong  := slPrice
+        exitReasonLong := "SL Hit"
+    else if high >= tp2Price
+        exitPriceLong  := tp2Price
+        exitReasonLong := "TP2 Hit"
+    else if not na(lastPivLow) and close < lastPivLow and (bar_index - entryBarIndex) <= structExitLookback
+        exitPriceLong  := close
+        exitReasonLong := "Structure Exit"
+    else if exitOnUtStop and utSellCross
+        exitPriceLong  := close
+        exitReasonLong := "UT Trailing Stop Exit"
+
+if posDir == "SHORT"
+    peakProfit := math.max(peakProfit, entryPrice - close)
+    if not tp1Hit and low <= tp1Price
+        tp1Hit          := true
+        tp1JustHitShort := true
+        if enableBreakEven
+            slPrice := entryPrice
+    if high >= slPrice
+        exitPriceShort  := slPrice
+        exitReasonShort := "SL Hit"
+    else if low <= tp2Price
+        exitPriceShort  := tp2Price
+        exitReasonShort := "TP2 Hit"
+    else if not na(lastPivHigh) and close > lastPivHigh and (bar_index - entryBarIndex) <= structExitLookback
+        exitPriceShort  := close
+        exitReasonShort := "Structure Exit"
+    else if exitOnUtStop and utBuyCross
+        exitPriceShort  := close
+        exitReasonShort := "UT Trailing Stop Exit"
+
+finalExitPrice  = posDir == "LONG" ? exitPriceLong : posDir == "SHORT" ? exitPriceShort : float(na)
+finalReason     = posDir == "LONG" ? exitReasonLong : posDir == "SHORT" ? exitReasonShort : string(na)
+tp1JustHit      = tp1JustHitLong or tp1JustHitShort
+slHitEvent      = not na(finalExitPrice) and finalReason == "SL Hit"
+tp2HitEvent     = not na(finalExitPrice) and finalReason == "TP2 Hit"
+structExitEvent = not na(finalExitPrice) and finalReason == "Structure Exit"
+utExitEvent     = not na(finalExitPrice) and finalReason == "UT Trailing Stop Exit"
+
+if tp1JustHit and enableAlerts
+    alert("NojaiBTC: TP1 hit at " + str.tostring(close), alert.freq_once_per_bar_close)
+
+if not na(finalExitPrice)
+    dir      = posDir == "LONG" ? 1 : -1
+    tradePnl = (finalExitPrice - entryPrice) * dir * lotSize
+    totalPnl += tradePnl
+    weekPnl  += tradePnl
+    monthPnl += tradePnl
+    if tradePnl > 0
+        totalWins    += 1
+        dailyWins    += 1
+        weeklyWins   += 1
+        monthWins    += 1
+    else if tradePnl < 0
+        totalLosses  += 1
+        dailyLosses  += 1
+        weeklyLosses += 1
+        monthLosses  += 1
+    else
+        totalBE += 1
+        beWeek  += 1
+        beMonth += 1
+    if showExitLabels
+        label.new(bar_index, finalExitPrice, finalReason, style = label.style_label_down, color = color.gray, textcolor = color.white)
+    if enableAlerts
+        alert("NojaiBTC: " + finalReason + " at " + str.tostring(finalExitPrice), alert.freq_once_per_bar_close)
+    posDir := ""
+
+alertcondition(newLong,         title = "NojaiBTC Buy Signal",           message = "NojaiBTC: BUY signal")
+alertcondition(newShort,        title = "NojaiBTC Sell Signal",          message = "NojaiBTC: SELL signal")
+alertcondition(tp1JustHit,      title = "NojaiBTC TP1 Hit",              message = "NojaiBTC: TP1 target hit")
+alertcondition(tp2HitEvent,     title = "NojaiBTC TP2 Hit",              message = "NojaiBTC: TP2 target hit")
+alertcondition(slHitEvent,      title = "NojaiBTC SL Hit",               message = "NojaiBTC: Stop-loss hit")
+alertcondition(structExitEvent, title = "NojaiBTC Structure Exit",       message = "NojaiBTC: Structure exit triggered")
+alertcondition(utExitEvent,     title = "NojaiBTC UT Trailing Stop Exit", message = "NojaiBTC: UT trailing-stop exit")
+
+// ============================================================================
+// DASHBOARD — "JMHP ENHANCED"
+// ============================================================================
+f_pct(w, l) =>
+    (w + l) > 0 ? (w / (w + l)) * 100 : 0.0
+
+totalWinPct   = f_pct(totalWins, totalLosses)
+dailyWinPct   = f_pct(dailyWins, dailyLosses)
+weeklyWinPct  = f_pct(weeklyWins, weeklyLosses)
+monthlyWinPct = f_pct(monthWins, monthLosses)
+
+statusText = posDir == "" ? "NO TRADE" : posDir == "LONG" ? "LONG ACTIVE" : "SHORT ACTIVE"
+signalText = posDir == "" ? "None" : posDir == "LONG" ? "BUY" : "SELL"
+entryTimeText = posDir == "" ? "None" : str.format_time(entryTime, "yyyy-MM-dd HH:mm", "UTC")
+beText = str.tostring(totalBE) + " (W" + str.tostring(beWeek) + "/M" + str.tostring(beMonth) + ")"
+
+pnlColor(v) => v >= 0 ? color.green : color.red
+
+if showDashboard and barstate.islast
+    var table dash = table.new(position.top_right, 2, 20, border_width = 1)
+
+    table.cell(dash, 0, 0, "JMHP ENHANCED", bgcolor = titleBgColor, text_color = titleTextColor)
+    table.cell(dash, 1, 0, "Performance",   bgcolor = titleBgColor, text_color = titleTextColor)
+
+    table.cell(dash, 0, 1, "Total Wins", bgcolor = color.green, text_color = color.white)
+    table.cell(dash, 1, 1, str.tostring(totalWins), bgcolor = color.green, text_color = color.white)
+
+    table.cell(dash, 0, 2, "Total Losses", bgcolor = color.red, text_color = color.white)
+    table.cell(dash, 1, 2, str.tostring(totalLosses), bgcolor = color.red, text_color = color.white)
+
+    table.cell(dash, 0, 3, "Total Win %", bgcolor = color.gray, text_color = color.white)
+    table.cell(dash, 1, 3, str.tostring(totalWinPct, "#.##") + "%", bgcolor = color.gray, text_color = color.white)
+
+    table.cell(dash, 0, 4, "Daily Wins", bgcolor = color.blue, text_color = color.white)
+    table.cell(dash, 1, 4, str.tostring(dailyWins), bgcolor = color.blue, text_color = color.white)
+
+    table.cell(dash, 0, 5, "Daily Losses", bgcolor = color.maroon, text_color = color.white)
+    table.cell(dash, 1, 5, str.tostring(dailyLosses), bgcolor = color.maroon, text_color = color.white)
+
+    table.cell(dash, 0, 6, "Daily Win %", bgcolor = color.navy, text_color = color.white)
+    table.cell(dash, 1, 6, str.tostring(dailyWinPct, "#.##") + "%", bgcolor = color.navy, text_color = color.white)
+
+    table.cell(dash, 0, 7, "Weekly Wins", bgcolor = color.orange, text_color = color.white)
+    table.cell(dash, 1, 7, str.tostring(weeklyWins), bgcolor = color.orange, text_color = color.white)
+
+    table.cell(dash, 0, 8, "Weekly Losses", bgcolor = color.fuchsia, text_color = color.white)
+    table.cell(dash, 1, 8, str.tostring(weeklyLosses), bgcolor = color.fuchsia, text_color = color.white)
+
+    table.cell(dash, 0, 9, "Weekly Win %", bgcolor = color.green, text_color = color.white)
+    table.cell(dash, 1, 9, str.tostring(weeklyWinPct, "#.##") + "%", bgcolor = color.green, text_color = color.white)
+
+    table.cell(dash, 0, 10, "Month Wins", bgcolor = color.olive, text_color = color.white)
+    table.cell(dash, 1, 10, str.tostring(monthWins), bgcolor = color.olive, text_color = color.white)
+
+    table.cell(dash, 0, 11, "Month Losses", bgcolor = color.purple, text_color = color.white)
+    table.cell(dash, 1, 11, str.tostring(monthLosses), bgcolor = color.purple, text_color = color.white)
+
+    table.cell(dash, 0, 12, "Monthly Win %", bgcolor = color.teal, text_color = color.white)
+    table.cell(dash, 1, 12, str.tostring(monthlyWinPct, "#.##") + "%", bgcolor = color.teal, text_color = color.white)
+
+    table.cell(dash, 0, 13, "Status", bgcolor = color.gray, text_color = color.white)
+    table.cell(dash, 1, 13, statusText, bgcolor = color.gray, text_color = color.white)
+
+    table.cell(dash, 0, 14, "Current Signal", bgcolor = color.gray, text_color = color.white)
+    table.cell(dash, 1, 14, signalText, bgcolor = color.gray, text_color = color.white)
+
+    table.cell(dash, 0, 15, "Entry Time", bgcolor = color.teal, text_color = color.white)
+    table.cell(dash, 1, 15, entryTimeText, bgcolor = color.teal, text_color = color.white)
+
+    table.cell(dash, 0, 16, "Week P&L $", bgcolor = pnlColor(weekPnl), text_color = color.white)
+    table.cell(dash, 1, 16, str.tostring(weekPnl, "#.##"), bgcolor = pnlColor(weekPnl), text_color = color.white)
+
+    table.cell(dash, 0, 17, "Month P&L $", bgcolor = pnlColor(monthPnl), text_color = color.white)
+    table.cell(dash, 1, 17, str.tostring(monthPnl, "#.##"), bgcolor = pnlColor(monthPnl), text_color = color.white)
+
+    table.cell(dash, 0, 18, "Total P&L $", bgcolor = pnlColor(totalPnl), text_color = color.white)
+    table.cell(dash, 1, 18, str.tostring(totalPnl, "#.##"), bgcolor = pnlColor(totalPnl), text_color = color.white)
+
+    table.cell(dash, 0, 19, "Break-Evens", bgcolor = color.new(#D2B48C, 0), text_color = color.black)
+    table.cell(dash, 1, 19, beText, bgcolor = color.new(#D2B48C, 0), text_color = color.black)
