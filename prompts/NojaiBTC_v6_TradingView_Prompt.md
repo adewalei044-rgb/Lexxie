@@ -3,7 +3,7 @@
 Use this as the build spec (or hand it directly to an AI coding assistant) to
 implement/regenerate the **NojaiBTC** indicator, version 6, exactly as
 configured in the reference screenshots. It supersedes the earlier
-"Lexxie Debug Entries" and "LEXXIE 3" experimental layers — v6 consolidates
+"Nojai Debug Entries" and "NOJAI 3" experimental layers — v6 consolidates
 their settings into one clean input set.
 
 ## Objective
@@ -11,6 +11,10 @@ their settings into one clean input set.
 Build a TradingView Pine Script (v6) `indicator()` named **NojaiBTC**,
 `overlay = true`, that:
 
+0. **Must be bidirectional**: capable of generating and managing both BUY
+   (long) and SELL (short) trades — not one-sided. Every entry, exit,
+   SL/TP, and dashboard element below applies symmetrically to both trade
+   directions (mirror the long-side math for shorts).
 1. Generates BUY/SELL signals from a channel-breakout entry filtered by an
    EMA trend and a sensitivity/buffer setting.
 2. Manages exits via market-structure pivots, an ATR trailing stop, and two
@@ -199,6 +203,6 @@ UT-trailing-stop exit (if `Exit on UT Trailing Stop?` is enabled).
   Bias: "Look For Buy Only") seen on the reference chart is a **separate**
   indicator, not part of NojaiBTC. Do not merge its logic in unless
   explicitly asked.
-- "Lexxie Debug Entries" and "LEXXIE 3" are prior experimental scripts;
+- "Nojai Debug Entries" and "NOJAI 3" are prior experimental scripts;
   v6 replaces them — do not port their leftover inputs verbatim, only the
   consolidated set documented above.
