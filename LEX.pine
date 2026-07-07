@@ -6,8 +6,8 @@
 //@version=6
 VERSION                   = 'v6_1_23'// 2023.10.13
 strategy(
-  'LEXXIE+',
-  shorttitle              = 'LEXXIE+ ' + VERSION,
+  'LEX',
+  shorttitle              = 'LEX ' + VERSION,
   overlay                 = true,
   explicit_plot_zorder    = true,
   pyramiding              = 0,
@@ -225,13 +225,19 @@ f_extend_box_endpoint(box_array) =>
 //
 //CALCULATIONS
 //
+intradaySeconds = timeframe.multiplier * intRes
 intradayMinutes = timeframe.multiplier * intRes
 // intraday timeframe strings are capped at 1440 minutes by TradingView; above that,
 // request.security() throws RE10061 ("Invalid value of the 'timeframe' argument").
 // Roll over into a daily string once the computed minutes exceed that cap.
+// Seconds-based charts are checked before the generic intraday branch: on a
+// seconds chart, timeframe.multiplier counts seconds, not minutes, so folding
+// it into the minutes branch would request an alternate timeframe 60x too
+// large. Roll over into minutes once the computed seconds exceed 59.
 stratRes = timeframe.ismonthly  ? str.tostring(timeframe.multiplier * intRes, '###M') :
            timeframe.isweekly   ? str.tostring(timeframe.multiplier * intRes, '###W') :
            timeframe.isdaily    ? str.tostring(timeframe.multiplier * intRes, '###D') :
+           timeframe.isseconds  ? (intradaySeconds > 59 ? str.tostring(math.ceil(intradaySeconds / 60)) : str.tostring(intradaySeconds, '#S')) :
            timeframe.isintraday ? (intradayMinutes > 1440 ? str.tostring(math.ceil(intradayMinutes / 1440), '###D') : str.tostring(intradayMinutes, '####')) :
            '60'
 src      = h ? request.security(ticker.heikinashi(syminfo.tickerid),
@@ -691,18 +697,18 @@ T_LVL        = '(%) Exit Level'
 T_QTY        = '(%) Adjust trade exit volume'
 T_MSG        = 'Paste JSON message for your bot'
 //Webhook Message
-O_LEMSG      = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"entry","side":"long","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_LXMSGSL    = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"stop_loss","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_LXMSGTP1   = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"take_profit_1","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_LXMSGTP2   = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"take_profit_2","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_LXMSGTP3   = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"take_profit_3","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_LXMSG      = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"exit","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_SEMSG      = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"entry","side":"short","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_SXMSGSL    = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"stop_loss","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_SXMSGA     = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"take_profit_1","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_SXMSGB     = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"take_profit_2","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_SXMSGC     = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"take_profit_3","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
-O_SXMSGX     = '{"ticker":"{{ticker}}","strategy":"LEXXIE+","event":"exit","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_LEMSG      = '{"ticker":"{{ticker}}","strategy":"LEX","event":"entry","side":"long","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_LXMSGSL    = '{"ticker":"{{ticker}}","strategy":"LEX","event":"stop_loss","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_LXMSGTP1   = '{"ticker":"{{ticker}}","strategy":"LEX","event":"take_profit_1","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_LXMSGTP2   = '{"ticker":"{{ticker}}","strategy":"LEX","event":"take_profit_2","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_LXMSGTP3   = '{"ticker":"{{ticker}}","strategy":"LEX","event":"take_profit_3","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_LXMSG      = '{"ticker":"{{ticker}}","strategy":"LEX","event":"exit","side":"long","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_SEMSG      = '{"ticker":"{{ticker}}","strategy":"LEX","event":"entry","side":"short","action":"sell","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_SXMSGSL    = '{"ticker":"{{ticker}}","strategy":"LEX","event":"stop_loss","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_SXMSGA     = '{"ticker":"{{ticker}}","strategy":"LEX","event":"take_profit_1","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_SXMSGB     = '{"ticker":"{{ticker}}","strategy":"LEX","event":"take_profit_2","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_SXMSGC     = '{"ticker":"{{ticker}}","strategy":"LEX","event":"take_profit_3","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
+O_SXMSGX     = '{"ticker":"{{ticker}}","strategy":"LEX","event":"exit","side":"short","action":"buy","price":{{close}},"contracts":{{strategy.order.contracts}},"time":"{{time}}"}'
 
 // ——————————— <input>          |           |                               |                        Line length guide |
 G_TP1        = '■ ' + 'TP1'
@@ -1266,7 +1272,7 @@ var table statsTable = table.new(
   bgcolor       = color.new(color.black, 15))
 
 if i_statsOn and (barstate.islast or barstate.isrealtime)
-    table.cell(statsTable, 0, 0, 'LEXXIE+ STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(statsTable, 0, 0, 'LEX STATS', text_color = color.white, bgcolor = color.new(color.gray, 30))
     table.merge_cells(statsTable, 0, 0, 1, 0)
 
     altLabel = useRes ? 'Alt Strategy' : 'Standard'
