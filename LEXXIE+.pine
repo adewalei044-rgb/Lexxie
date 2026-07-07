@@ -651,13 +651,16 @@ variant(type, src, len, offSig, offALMA) =>
     type == 'EMA' ? v2 : type == 'DEMA' ? v3 : type == 'TEMA' ? v4 : type == 'WMA' ? v5 : type == 'VWMA' ? v6 : type == 'SMMA' ? v7 : type == 'HullMA' ? v8 : type == 'LSMA' ? v9 : type == 'ALMA' ? v10 : type == 'TMA' ? v11 : type == 'SSMA' ? v12 : v1
 
 // security wrapper for repeat calls
-// NON-REPAINTING FIX: use offset 1 while the bar is still forming (isconfirmed=false)
-// and offset 0 only at bar close (isconfirmed=true). This fires the signal at the
-// exact bar close rather than one bar late. The old isrealtime flag was true even at
-// bar close, which caused the offset-1 delay to persist through the closing tick,
-// pushing entries to the next bar.
+// NON-REPAINTING: always read the prior, fully-closed bar of the alternate
+// timeframe (fixed offset of 1) with lookahead_on. barstate.isconfirmed on the
+// chart timeframe does not imply the alternate (typically higher) timeframe
+// bar has closed, so switching to offset 0 at chart-bar close let the signal
+// react to a still-forming alternate-timeframe bar and repaint once that bar
+// finished closing. A fixed offset of 1 trades some latency (confirmation
+// can lag up to one full alternate-timeframe bar) for signals that never
+// change once fired.
 reso(exp, use, res) =>
-    security_1 = request.security(syminfo.tickerid, res, exp[barstate.isconfirmed ? 0 : 1], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+    security_1 = request.security(syminfo.tickerid, res, exp[1], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
     use ? security_1 : exp
 
 // === /BASE FUNCTIONS ===
