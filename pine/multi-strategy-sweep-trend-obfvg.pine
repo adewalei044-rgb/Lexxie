@@ -764,13 +764,19 @@ var float monthMaxDD_Capital = 0.0
 var int curLossStreak      = 0
 var int maxLossStreakMonth = 0
 
-newDay = ta.change(time("D")) != 0
+// Both "day" and "month" boundaries are pinned to UTC 00:00 explicitly
+// (via the 3-arg time() overload) rather than relying on time("D")/time("M"),
+// which use the chart's own display timezone — on a symbol like BTCUSD that
+// trades 24/7, that made "Trades Today" / "Daily Win / Loss" roll over at
+// whatever hour the chart's timezone happens to hit midnight, instead of at
+// a fixed, predictable UTC boundary.
+newDay = ta.change(time("D", "0000-2400", "UTC")) != 0
 if newDay
     dailyWin    := 0
     dailyLoss   := 0
     tradesToday := 0
 
-newMonth = ta.change(time("M")) != 0
+newMonth = ta.change(time("M", "0000-2400", "UTC")) != 0
 if newMonth
     monthPeakEquity    := strategy.equity
     monthMaxDD_Capital := 0.0
