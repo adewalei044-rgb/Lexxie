@@ -831,11 +831,14 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 // disagree. Reading strategy.closedtrades guarantees the table always
 // matches the backtest exactly, because it IS the backtest.
 //
-// beThreshold: a trade whose realized P&L is within this many dollars of
-// zero is counted as "break-even" rather than a clean win/loss — this
-// absorbs the small commission/slippage drag left over when break-even
-// logic moves the stop to the exact entry price. Tune if your commission/
-// slippage settings are larger.
+// beThreshold: when Break-Even is enabled, a trade whose realized P&L is
+// within this many dollars of zero is counted as "break-even" rather than
+// a clean win/loss — this absorbs the small commission/slippage drag left
+// over when break-even logic moves the stop to the exact entry price. Tune
+// if your commission/slippage settings are larger. Gated on enableBE so
+// that with the feature OFF, a trade that merely happened to close near
+// zero P&L (for any other reason) is never mislabeled "break-even" — it's
+// scored purely win/loss by profit sign instead.
 // ============================================================================
 var int lastClosedCount = 0
 beThreshold = strategy.initial_capital * 0.0005
@@ -843,7 +846,7 @@ beThreshold = strategy.initial_capital * 0.0005
 if strategy.closedtrades > lastClosedCount
     for i = lastClosedCount to strategy.closedtrades - 1
         tradeProfit = strategy.closedtrades.profit(i)
-        isBE   = math.abs(tradeProfit) <= beThreshold
+        isBE   = enableBE and math.abs(tradeProfit) <= beThreshold
         isWin  = not isBE and tradeProfit > 0
         isLoss = not isBE and tradeProfit < 0
 
