@@ -1,5 +1,5 @@
 //@version=6
-strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, pyramiding=4, commission_type=strategy.commission.percent, commission_value=0.0, slippage=0, calc_on_every_tick=false, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
+strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, pyramiding=4, commission_type=strategy.commission.percent, commission_value=0.0, slippage=0, calc_on_every_tick=false, process_orders_on_close=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
 
 // ============================================================================
 // HOW TO USE
@@ -16,6 +16,13 @@ strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay
 // (equity curve, drawdown, commission if you set it, etc.). Position size,
 // commission, and slippage defaults above can be changed either here in code
 // or in the strategy's Properties tab on the chart.
+//
+// process_orders_on_close=true makes strategy.entry()/strategy.exit() fill
+// at the CLOSE of the signal bar (matching this script's own internal
+// entryPx/slPx/tpPx math, which is anchored to that same close) instead of
+// TradingView's default of filling at the OPEN of the next bar. Without
+// this, the real backtest fills and this script's own SL/TP levels would
+// drift apart on gappy symbols/timeframes.
 // ============================================================================
 
 // ---------------------------------------------------------------------------
