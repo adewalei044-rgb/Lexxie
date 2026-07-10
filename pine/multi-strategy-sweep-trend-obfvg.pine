@@ -1,5 +1,16 @@
 //@version=6
-strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, pyramiding=4, commission_type=strategy.commission.percent, commission_value=0.0, slippage=0, calc_on_every_tick=false, process_orders_on_close=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
+// Position sizing uses a FIXED dollar amount per trade (strategy.cash),
+// computed from an adjustable "% of INITIAL capital" input (not current,
+// compounding equity) — every strategy.entry() call, from any of the 4
+// pairs, sizes identically regardless of how many pairs are concurrently
+// open or how equity has moved from wins/losses so far. This keeps "amount
+// traded" a clean, constant percentage of the $10,000 initial capital
+// rather than drifting as strategy.percent_of_equity would (which
+// recomputes off CURRENT equity every time, so concurrent entries or a
+// winning/losing streak would each size differently). Adjust the percentage
+// in Settings > Inputs > Risk / Trade Management > "Position Size (% of
+// Initial Capital)".
+strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay=true, initial_capital=10000, default_qty_type=strategy.cash, default_qty_value=10000 * input.float(10, "Position Size (% of Initial Capital)", minval = 0.1, maxval = 100, group = "Risk / Trade Management") / 100, pyramiding=4, commission_type=strategy.commission.percent, commission_value=0.0, slippage=0, calc_on_every_tick=false, process_orders_on_close=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
 
 // ============================================================================
 // HOW TO USE
@@ -198,8 +209,7 @@ f_webhookMsg(template, stratTag, pairTag, action, price, sl, tp, rr) =>
 
 // ============================================================================
 // STRATEGY 1 ENGINE — SWEEP REVERSAL (called once per pair)
-// Returns: [result, justEntered, tradeDir, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound]
-//   result: 0 = nothing resolved this bar, 1 = win, -1 = loss, 2 = break-even exit
+// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen]
 //   sweepJustDetected/zoneJustFound: diagnostic pulses for this bar only, used
 //   to feed the "Sweeps Detected / Zones Found" counters in the performance
 //   table, so it's visible which stage of the funnel (if any) is producing
@@ -261,7 +271,6 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
     var float curEC = na
     var int   curET = na
 
-    int  result      = 0
     bool justEntered = false
     bool sweepJustDetected = false
     bool zoneJustFound     = false
@@ -437,34 +446,30 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
 
-        // MANAGE OPEN TRADE — break-even, target, stop. This mirrors what the
-        // real strategy.exit() order (placed at entry, above) will do, so our
-        // internal win/loss/BE bookkeeping stays in sync with the actual
-        // backtest — when break-even moves the stop, we re-issue
-        // strategy.exit() with the new stop level to move the real pending
-        // order too (re-calling strategy.exit for the same id updates it).
+        // MANAGE OPEN TRADE — break-even, target, stop. This just moves the
+        // REAL pending strategy.exit() order when break-even triggers
+        // (re-calling strategy.exit with the same id updates it) and clears
+        // local armed/zone state once the position is flat. Win/loss/BE
+        // bookkeeping for the table is derived separately from
+        // strategy.closedtrades — the actual trade ledger — instead of being
+        // simulated here against entryPx/slPx/tpPx and chart high/low, since
+        // that simulation could drift from the real filled price, quantity,
+        // commission, and slippage (see the "TABLE STATS FROM REAL CLOSED
+        // TRADES" section below).
         if inTrade
             if tradeDir == 1
                 if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
                     slPx   := entryPx
                     beDone := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
-                if high >= tpPx
-                    result  := 1
-                    inTrade := false
-                else if low <= slPx
-                    result  := beDone ? 2 : -1
+                if high >= tpPx or low <= slPx
                     inTrade := false
             else
                 if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
                     slPx   := entryPx
                     beDone := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
-                if low <= tpPx
-                    result  := 1
-                    inTrade := false
-                else if high >= slPx
-                    result  := beDone ? 2 : -1
+                if low <= tpPx or high >= slPx
                     inTrade := false
 
             if not inTrade and oneSignalPerSweep
@@ -485,11 +490,11 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
         curEC := ec
         curET := et
 
-    [result, justEntered, dirState, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen]
+    [justEntered, dirState, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen]
 
 // ============================================================================
 // STRATEGY 2 ENGINE — TREND CONTINUATION + FVG ENTRY (called once per pair)
-// Returns: [result, justEntered, tradeDir, entryPx, slPx, tpPx, contJustDetected, zoneJustFound]
+// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
 // ============================================================================
 f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swingN, manualBias, requireFullClose, maxWaitBars, oneSignalPerCont, rr, canTradeMore, bullCol, bearCol) =>
     var float p_o = na
@@ -539,7 +544,6 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
     var float curEC = na
     var int   curET = na
 
-    int  result      = 0
     bool justEntered = false
     bool contJustDetected = false
     bool zoneJustFound    = false
@@ -690,29 +694,23 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
 
         // Mirrors the real strategy.exit() order placed at entry above; see
         // the equivalent comment in f_sweepPair for why break-even re-issues
-        // strategy.exit() with the moved stop.
+        // strategy.exit() with the moved stop, and why win/loss/BE
+        // bookkeeping is no longer simulated here (derived from
+        // strategy.closedtrades instead — see below).
         if inTrade
             if tradeDir == 1
                 if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
                     slPx   := entryPx
                     beDone := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
-                if high >= tpPx
-                    result  := 1
-                    inTrade := false
-                else if low <= slPx
-                    result  := beDone ? 2 : -1
+                if high >= tpPx or low <= slPx
                     inTrade := false
             else
                 if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
                     slPx   := entryPx
                     beDone := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
-                if low <= tpPx
-                    result  := 1
-                    inTrade := false
-                else if high >= slPx
-                    result  := beDone ? 2 : -1
+                if low <= tpPx or high >= slPx
                     inTrade := false
 
             if not inTrade and oneSignalPerCont
@@ -733,7 +731,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
         curEC := ec
         curET := et
 
-    [result, justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
+    [justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
 
 // ============================================================================
 // GLOBAL COUNTERS (performance table + max trades/day)
@@ -802,56 +800,62 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 // ============================================================================
 // RUN STRATEGY 1 — both pairs
 // ============================================================================
-[s1aRes, s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone, s1aHtf] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
-[s1bRes, s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone, s1bHtf] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
+[s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone, s1aHtf] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
+[s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone, s1bHtf] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
 
 // ============================================================================
 // RUN STRATEGY 2 — both pairs
 // ============================================================================
-[s2aRes, s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone, s2aHtf] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
-[s2bRes, s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
+[s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone, s2aHtf] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
+[s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
 
 // ============================================================================
-// AGGREGATE RESULTS INTO GLOBAL COUNTERS
-// f_resultDeltas is a pure function (no outer-scope mutation) that just
-// converts a result code into deltas; the actual += happens at top level,
-// which avoids relying on functions mutating global var state.
+// TABLE STATS FROM REAL CLOSED TRADES
+// Win/loss/break-even and the daily/weekly/monthly win-loss counters are
+// derived directly from strategy.closedtrades — TradingView's actual trade
+// ledger — instead of being simulated inside f_sweepPair/f_contPair against
+// this script's own entryPx/slPx/tpPx and the chart's high/low. The
+// simulated approach could drift from the REAL filled price, quantity,
+// commission, and slippage (e.g. process_orders_on_close, stop/limit
+// intrabar fills, or a chart timeframe coarser than the entry TF), which is
+// exactly why the table and the Strategy Tester's own trade list could
+// disagree. Reading strategy.closedtrades guarantees the table always
+// matches the backtest exactly, because it IS the backtest.
+//
+// beThreshold: a trade whose realized P&L is within this many dollars of
+// zero is counted as "break-even" rather than a clean win/loss — this
+// absorbs the small commission/slippage drag left over when break-even
+// logic moves the stop to the exact entry price. Tune if your commission/
+// slippage settings are larger.
 // ============================================================================
-f_resultDeltas(res) =>
-    int winD  = res == 1 ? 1 : 0
-    int lossD = res == -1 ? 1 : 0
-    int beD   = res == 2 ? 1 : 0
-    [winD, lossD, beD]
+var int lastClosedCount = 0
+beThreshold = strategy.initial_capital * 0.0005
 
-[w1, l1, b1] = f_resultDeltas(s1aRes)
-[w2, l2, b2] = f_resultDeltas(s1bRes)
-[w3, l3, b3] = f_resultDeltas(s2aRes)
-[w4, l4, b4] = f_resultDeltas(s2bRes)
+if strategy.closedtrades > lastClosedCount
+    for i = lastClosedCount to strategy.closedtrades - 1
+        tradeProfit = strategy.closedtrades.profit(i)
+        isBE   = math.abs(tradeProfit) <= beThreshold
+        isWin  = not isBE and tradeProfit > 0
+        isLoss = not isBE and tradeProfit < 0
 
-winDelta  = w1 + w2 + w3 + w4
-lossDelta = l1 + l2 + l3 + l4
-beDelta   = b1 + b2 + b3 + b4
+        wins        += isWin  ? 1 : 0
+        losses      += isLoss ? 1 : 0
+        beCount     += isBE   ? 1 : 0
+        dailyWin    += isWin  ? 1 : 0
+        dailyLoss   += isLoss ? 1 : 0
+        weeklyWin   += isWin  ? 1 : 0
+        weeklyLoss  += isLoss ? 1 : 0
+        monthlyWin  += isWin  ? 1 : 0
+        monthlyLoss += isLoss ? 1 : 0
 
-wins        += winDelta
-losses      += lossDelta
-beCount     += beDelta
-dailyWin    += winDelta
-dailyLoss   += lossDelta
-weeklyWin   += winDelta
-weeklyLoss  += lossDelta
-monthlyWin  += winDelta
-monthlyLoss += lossDelta
+        // Losing streak: a win or break-even breaks it; a loss extends it.
+        if isWin or isBE
+            curLossStreak := 0
+        else if isLoss
+            curLossStreak += 1
+        maxLossStreakMonth := math.max(maxLossStreakMonth, curLossStreak)
 
-// Losing streak: any win or break-even this bar breaks the streak; a bar
-// with only losses extends it. (Multiple pairs can resolve on the same bar;
-// treating a same-bar win+loss combo as "streak broken" and a same-bar
-// multi-loss combo as "streak extended by that count" is a reasonable
-// simplification for this edge case.)
-if winDelta > 0 or beDelta > 0
-    curLossStreak := 0
-else if lossDelta > 0
-    curLossStreak += lossDelta
-maxLossStreakMonth := math.max(maxLossStreakMonth, curLossStreak)
+    lastClosedCount := strategy.closedtrades
 
 tradesThisBar = (s1aEntered ? 1 : 0) + (s1bEntered ? 1 : 0) + (s2aEntered ? 1 : 0) + (s2bEntered ? 1 : 0)
 tradesToday += tradesThisBar
