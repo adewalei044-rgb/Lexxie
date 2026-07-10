@@ -11,7 +11,7 @@ get their own ON/OFF toggle buttons:
 | Strategy | What it does | Master settings toggle | Default |
 |----------|---------------|--------------------------|---------|
 | 1. Sweep Reversal | Liquidity sweep of the previous candle by an opposite-colored candle, armed on the 3rd candle's open, entry via OB/FVG mitigation on a lower timeframe | "Enable Strategy 1: Sweep Reversal" | ON |
-| 2. Trend Continuation | A trend-aligned candle that closes beyond the previous candle (continuation/breakout), armed on the next candle, entry via FVG reversal/pullback on a lower timeframe | "Enable Strategy 2: Trend Continuation" | OFF |
+| 2. Trend Continuation | A trend-aligned candle that closes beyond the previous candle (continuation/breakout), armed on the next candle, entry via FVG reversal/pullback on a lower timeframe. Supports 1H→1M and 4H→5M pairs. | "Enable Strategy 2: Trend Continuation" | OFF |
 
 Within Strategy 1, every individual timeframe also gets its own ON/OFF
 toggle (as established previously):
@@ -26,9 +26,19 @@ toggle (as established previously):
 A timeframe pair is only active when both its sweep-detection toggle and
 its entry-confirmation toggle are switched ON.
 
-Strategy 2 runs on its own fixed pair by default (1H trend candle → 1M FVG
-entry), also exposed as individually toggleable timeframes so it can be
-retuned the same way.
+Strategy 2 works the same way, and now supports **two** timeframe pairs
+(same pattern as Strategy 1), each with its own individual ON/OFF toggle:
+
+| Timeframe | Role | Settings toggle | Default |
+|-----------|------|------------------|---------|
+| 1 Hour (1H) | Trend candle detection | "1H Trend Candle Detection: ON/OFF" | ON |
+| 1 Minute (1M) | FVG entry confirmation | "1M FVG Entry Confirmation: ON/OFF" | ON |
+| 4 Hour (4H) | Trend candle detection | "4H Trend Candle Detection: ON/OFF" | OFF |
+| 5 Minute (5M) | FVG entry confirmation | "5M FVG Entry Confirmation: ON/OFF" | OFF |
+
+Same rule as Strategy 1: a Strategy 2 pair is only active when both its
+trend-detection toggle and its entry-confirmation toggle are ON (e.g.
+1H+1M = Pair A, 4H+5M = Pair B).
 
 ---
 
@@ -123,17 +133,24 @@ pair's entry timeframe)
 STRATEGY 2 — TREND CONTINUATION + FVG REVERSAL ENTRY (new)
 ================================================================
 TIMEFRAMES
-    input.bool(true, "1H Trend Candle Detection")   // ON by default
-    input.bool(true, "1M FVG Entry Confirmation")   // ON by default
-  Both individually toggleable and retunable via free-text timeframe
-  inputs, defaulting to "60" (1H) and "1" (1M). This strategy is only
-  active while its master toggle ("Enable Strategy 2") AND both of
-  these timeframe toggles are ON.
+    input.bool(true,  "1H Trend Candle Detection")     // ON by default
+    input.bool(true,  "1M FVG Entry Confirmation")     // ON by default
+    input.bool(false, "4H Trend Candle Detection")     // OFF by default
+    input.bool(false, "5M FVG Entry Confirmation")     // OFF by default
+  Each individually toggleable and retunable via free-text timeframe
+  inputs, defaulting to "60" (1H), "1" (1M), "240" (4H), "5" (5M). A
+  pair is active when both its trend-detection toggle and its
+  entry-confirmation toggle are ON (1H+1M = Pair A, 4H+5M = Pair B).
+  This strategy is only active while its master toggle ("Enable
+  Strategy 2") AND at least one pair's two toggles are ON. Both pairs
+  may run simultaneously, tracked independently (separate state,
+  drawings, and alerts per pair, labeled "S2 1H/1M" vs "S2 4H/5M").
 
-STEP 1 — TREND DIRECTION (1H)
+STEP 1 — TREND DIRECTION (run per active pair, on that pair's trend
+-detection timeframe, e.g. 1H for Pair A or 4H for Pair B)
 - Add a "Trend Detection Method" input with options:
     a) "Auto (EMA)": trend is bullish when close is above a
-       user-configurable EMA (default length 50) on the 1H timeframe,
+       user-configurable EMA (default length 50) on that timeframe,
        bearish when below.
     b) "Auto (Structure)": trend is bullish when price is making
        higher highs and higher lows over the last N swing points
@@ -141,12 +158,14 @@ STEP 1 — TREND DIRECTION (1H)
        highs and lower lows.
     c) "Manual": user explicitly selects Bullish or Bearish bias via a
        dropdown input, overriding automatic detection.
-  Default method: "Auto (EMA)".
+  Default method: "Auto (EMA)". Expose this setting per pair so, for
+  example, Pair A (1H) and Pair B (4H) can use different EMA lengths.
 
-STEP 2 — TREND CONTINUATION CANDLE (1H)
-- Candle X = a 1H candle whose color matches the current trend
-  direction (bullish candle, close > open, if trend is bullish;
-  bearish candle, close < open, if trend is bearish).
+STEP 2 — TREND CONTINUATION CANDLE (on that pair's trend-detection
+timeframe)
+- Candle X = a candle on that timeframe whose color matches the
+  current trend direction (bullish candle, close > open, if trend is
+  bullish; bearish candle, close < open, if trend is bearish).
 - Continuation condition (bullish trend): Candle X CLOSES above the
   previous candle's high (full-body close beyond the prior candle,
   confirming displacement in the trend direction).
@@ -161,31 +180,34 @@ STEP 2 — TREND CONTINUATION CANDLE (1H)
   continuation pattern, not a reversal sweep.
 
 STEP 3 — NEXT CANDLE TRIGGER
-- Once a valid Continuation Signature is confirmed, arm the setup
-  starting at the OPEN of the very next 1H candle (the candle
-  immediately after Candle X closes).
-- From that open onward, watch the 1M timeframe for a Fair Value Gap
-  reversal/pullback entry (Step 4). Keep the setup "armed" until either
-  a valid entry triggers or an invalidation occurs (price closes back
-  through Candle X's open on the 1H, i.e. the continuation fails, or a
-  max number of 1M bars/hours elapse without a trigger — expose as an
-  input).
+- Once a valid Continuation Signature is confirmed for a pair, arm that
+  pair's setup starting at the OPEN of the very next candle on that
+  pair's trend-detection timeframe (the candle immediately after
+  Candle X closes).
+- From that open onward, watch that pair's entry timeframe (1M for
+  Pair A, 5M for Pair B) for a Fair Value Gap reversal/pullback entry
+  (Step 4). Keep the setup "armed" until either a valid entry triggers
+  or an invalidation occurs (price closes back through Candle X's open
+  on the trend-detection timeframe, i.e. the continuation fails, or a
+  max number of entry-timeframe bars/hours elapse without a trigger —
+  expose as a per-pair input).
 
-STEP 4 — 1M FVG REVERSAL/PULLBACK ENTRY
+STEP 4 — FVG REVERSAL/PULLBACK ENTRY (on that pair's entry timeframe:
+1M for Pair A, 5M for Pair B)
 - Direction of the trade = the SAME direction as the trend/continuation
   (this is a trend-following pullback entry, not a fade): bullish trend
   → look for a BULLISH entry; bearish trend → look for a BEARISH entry.
-- On the 1M timeframe, once armed, detect a Fair Value Gap (3-candle
+- On the entry timeframe, once armed, detect a Fair Value Gap (3-candle
   imbalance, same definition as Strategy 1) that formed during the
   continuation move.
 - Entry trigger: price pulls back ("reversal" in the small-timeframe
-  sense — a retracement, not a trend reversal) into the 1M FVG zone and
+  sense — a retracement, not a trend reversal) into the FVG zone and
   shows a rejection back in the trend direction (wick into the zone
   with a close back in the trend direction, or a trend-aligned
   engulfing candle inside the zone).
-- Only take the FIRST valid FVG mitigation after arming; ignore further
-  signals until invalidated or a trade is taken (toggle input: "one
-  signal per continuation").
+- Only take the FIRST valid FVG mitigation after arming per pair;
+  ignore further signals until invalidated or a trade is taken (toggle
+  input: "one signal per continuation", applied per pair).
 
 ================================================================
 VISUALS
@@ -195,9 +217,10 @@ VISUALS
   arrow showing swept direction; "Armed" label at C3's open; OB/FVG box
   on the entry timeframe; entry triangle/label with price.
 - Strategy 2: box/bracket around the previous candle + Candle X on the
-  1H timeframe labeled "Continuation [S2 1H/1M]" with an arrow showing
-  trend direction; "Armed" label at the next candle's open; FVG box on
-  the 1M timeframe; entry triangle/label with price.
+  trend-detection timeframe labeled "Continuation [S2 1H/1M]" or
+  "Continuation [S2 4H/5M]" (per pair) with an arrow showing trend
+  direction; "Armed" label at the next candle's open; FVG box on the
+  entry timeframe; entry triangle/label with price.
 - Use visually distinct colors/label prefixes ("S1" vs "S2") so signals
   from the two strategies are never confused, especially when both are
   enabled at once.
@@ -210,7 +233,8 @@ ALERTS
   each labeled with the active pair.
 - Strategy 2: alertcondition() for "Continuation Signature Detected",
   "Setup Armed (Next Candle Open)", "FVG Formed", "Entry Triggered"
-  (long/short), each labeled "S2".
+  (long/short), each labeled with the active pair ("S2 1H/1M" or
+  "S2 4H/5M").
 
 ================================================================
 INPUTS (user-configurable, grouped by strategy)
@@ -236,16 +260,20 @@ Strategy 2:
   text input (default "60")
 - "1M FVG Entry Confirmation: ON/OFF" (bool, default ON) + timeframe
   text input (default "1")
+- "4H Trend Candle Detection: ON/OFF" (bool, default OFF) + timeframe
+  text input (default "240")
+- "5M FVG Entry Confirmation: ON/OFF" (bool, default OFF) + timeframe
+  text input (default "5")
 - "Trend Detection Method" (dropdown: Auto EMA / Auto Structure /
-  Manual, default Auto EMA)
+  Manual, default Auto EMA) — exposed per pair
 - EMA length for trend filter (int, default 50, used when method =
-  Auto EMA)
+  Auto EMA) — exposed per pair
 - Swing lookback N for structure trend filter (int, default 3, used
-  when method = Auto Structure)
+  when method = Auto Structure) — exposed per pair
 - Manual trend bias (dropdown: Bullish / Bearish, used when method =
-  Manual)
+  Manual) — exposed per pair
 - Require full-body close beyond previous candle (bool, default true)
-- Max bars/hours to wait for entry after arming (int)
+- Max bars/hours to wait for entry after arming (int, per pair)
 
 Shared:
 - Colors for bullish/bearish zones and labels, with separate color sets
@@ -261,10 +289,10 @@ CODE REQUIREMENTS
   lookahead=barmerge.lookahead_off for all higher-timeframe pulls (4H,
   1H) to avoid repainting.
 - Keep state using var/varip variables to track each strategy's/pair's
-  current Signature, armed status, and OB/FVG/FVG zone across bars,
-  fully independently (separate state for Strategy 1's pairs and
-  Strategy 2, so enabling multiple simultaneously never cross-
-  contaminates signals).
+  current Signature, armed status, and OB/FVG zone across bars, fully
+  independently (separate state for each of Strategy 1's pairs and
+  each of Strategy 2's pairs, so enabling multiple simultaneously never
+  cross-contaminates signals).
 - Add clear inline comments only where the logic is non-obvious (e.g.
   why lookahead is disabled, why full-body close is required, why
   Strategy 2 trades WITH the trend while Strategy 1 trades AGAINST the
@@ -303,16 +331,22 @@ CODE REQUIREMENTS
   "trend" is determined, the prompt exposes it as a configurable input
   (EMA-based, swing-structure-based, or manual bias) so you can pick
   the definition that matches your usual analysis.
-- **"Trade next candle reversal on 1 minute timeframe FVG"** was
-  interpreted as: once the continuation candle closes and the next 1H
-  candle opens, drop to 1M and wait for price to pull back
-  ("reversal" here meaning a short-term retracement, not a full trend
-  reversal) into a Fair Value Gap, then enter WITH the trend on
-  rejection from that FVG. This is the opposite trade direction from
-  Strategy 1 (which fades/reverses the sweep) — Strategy 2 trades in
-  the same direction as the identified trend.
+- **"Trade next candle reversal on 1 minute / 5 minute timeframe FVG"**
+  was interpreted as: once the continuation candle closes and the next
+  candle opens on the trend-detection timeframe, drop to the entry
+  timeframe and wait for price to pull back ("reversal" here meaning a
+  short-term retracement, not a full trend reversal) into a Fair Value
+  Gap, then enter WITH the trend on rejection from that FVG. This is
+  the opposite trade direction from Strategy 1 (which fades/reverses
+  the sweep) — Strategy 2 trades in the same direction as the
+  identified trend.
+- The **4H trend candle / 5M FVG entry** request was treated as a
+  second selectable pair inside Strategy 2 (Pair B), running the exact
+  same continuation + pullback logic as the original 1H/1M pair (Pair
+  A), just on higher timeframes — rather than as a wholly separate
+  strategy, since the rules described are identical.
 
-If either of these assumptions doesn't match your intent — particularly
-how "trend" should be defined for Strategy 2, or whether the 1M FVG
-entry should instead fade the continuation candle rather than ride the
-trend — let me know and I'll adjust the prompt.
+If any of these assumptions doesn't match your intent — particularly
+how "trend" should be defined for Strategy 2, or whether the FVG entry
+should instead fade the continuation candle rather than ride the trend
+— let me know and I'll adjust the prompt.
