@@ -194,9 +194,12 @@ STEP 3 — NEXT CANDLE TRIGGER
 
 STEP 4 — FVG REVERSAL/PULLBACK ENTRY (on that pair's entry timeframe:
 1M for Pair A, 5M for Pair B)
-- Direction of the trade = the SAME direction as the trend/continuation
-  (this is a trend-following pullback entry, not a fade): bullish trend
-  → look for a BULLISH entry; bearish trend → look for a BEARISH entry.
+- Direction of the trade = the SAME direction as the trend/continuation,
+  confirmed: trade to the UPSIDE (long) when the trend is bullish, and
+  to the DOWNSIDE (short) when the trend is bearish. This is a
+  trend-following pullback entry, NOT a fade of the continuation
+  candle — bullish trend → BULLISH entry only; bearish trend → BEARISH
+  entry only. Never take a counter-trend entry in Strategy 2.
 - On the entry timeframe, once armed, detect a Fair Value Gap (3-candle
   imbalance, same definition as Strategy 1) that formed during the
   continuation move.
@@ -331,20 +334,22 @@ CODE REQUIREMENTS
   "trend" is determined, the prompt exposes it as a configurable input
   (EMA-based, swing-structure-based, or manual bias) so you can pick
   the definition that matches your usual analysis.
-- **"Trade next candle reversal on 1 minute / 5 minute timeframe FVG"**
-  was interpreted as: once the continuation candle closes and the next
-  candle opens on the trend-detection timeframe, drop to the entry
-  timeframe and wait for price to pull back ("reversal" here meaning a
-  short-term retracement, not a full trend reversal) into a Fair Value
-  Gap, then enter WITH the trend on rejection from that FVG. This is
-  the opposite trade direction from Strategy 1 (which fades/reverses
-  the sweep) — Strategy 2 trades in the same direction as the
-  identified trend.
-- The **4H trend candle / 5M FVG entry** request was treated as a
-  second selectable pair inside Strategy 2 (Pair B), running the exact
-  same continuation + pullback logic as the original 1H/1M pair (Pair
-  A), just on higher timeframes — rather than as a wholly separate
-  strategy, since the rules described are identical.
+- **"Trade next candle reversal ... according to trend to the upside or
+  downside"** — CONFIRMED (not just assumed): once the continuation
+  candle closes and the next candle opens on the trend-detection
+  timeframe, drop to the entry timeframe and wait for price to pull
+  back ("reversal" here meaning a short-term retracement, not a full
+  trend reversal) into a Fair Value Gap, then enter WITH the trend on
+  rejection from that FVG — long/upside entries only in a bullish
+  trend, short/downside entries only in a bearish trend, never a
+  counter-trend fade. This is the opposite trade direction from
+  Strategy 1 (which fades/reverses the sweep).
+- The **4H trend candle / 5M FVG entry** and **1H trend candle / 1M FVG
+  entry** requests were both treated as selectable pairs inside the
+  same Strategy 2 (Pair A = 1H/1M, Pair B = 4H/5M), running identical
+  continuation + upside/downside pullback logic, just on different
+  timeframes — rather than as separate strategies, since the rules
+  described are the same.
 
 If any of these assumptions doesn't match your intent — particularly
 how "trend" should be defined for Strategy 2, or whether the FVG entry
