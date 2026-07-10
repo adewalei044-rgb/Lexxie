@@ -213,17 +213,106 @@ STEP 4 — FVG REVERSAL/PULLBACK ENTRY (on that pair's entry timeframe:
   input: "one signal per continuation", applied per pair).
 
 ================================================================
+GLOBAL FEATURES (apply across both strategies)
+================================================================
+
+SESSION FILTER (optional — off by default)
+- input.bool(false, "Enable Session Filter"): when OFF, setups can
+  detect/arm/enter at any time of day, exactly as described above.
+- When ON, expose:
+    - "Session Preset" dropdown: London / New York / Asian / London-NY
+      Overlap / Custom.
+    - "Custom Session" time-range input (Pine `input.session()`,
+      e.g. "0800-1700") used when preset = Custom.
+    - "Session Timezone" input (default = chart/exchange timezone,
+      selectable, e.g. "America/New_York", "Etc/UTC").
+- While the filter is ON, only allow ENTRY triggers (Strategy 1 Step 3
+  mitigation, Strategy 2 Step 4 mitigation) to fire when the current
+  entry-timeframe bar's time falls inside the active session window.
+  Sweep/continuation detection and arming may still happen outside the
+  session (so a setup can be armed overnight and simply wait for the
+  next session to open before it's allowed to trigger).
+
+BUY/SELL ENTRY LABELS
+- On every confirmed entry, plot an explicit label.new at the entry
+  bar: a green "BUY" label below the bar for long entries, a red
+  "SELL" label above the bar for short entries, each showing the entry
+  price and the originating strategy/pair tag (e.g. "BUY — S2 1H/1M").
+  This is in addition to (or replaces) the generic entry
+  triangle/label already described in Strategy 1/2 Step visuals.
+
+PERFORMANCE STATS TABLE (top-right corner of the chart)
+- input.bool(true, "Show Performance Table").
+- Use table.new(position.top_right, ...) to render a small dashboard
+  with these rows, updated live as trades resolve:
+    - Win Rate (%)
+    - Wins (count) / Losses (count)
+    - Daily Win (count, resets at the start of each new calendar day
+      in the chart's/exchange's timezone) / Daily Loss (count, same
+      reset rule)
+    - Drawdown (running max drawdown, expressed in R multiples and as
+      a %, measured from the equity peak of the simulated R-based
+      trade stream)
+  Track every simulated trade internally as a "win" (target hit before
+  stop) or "loss" (stop hit before target) using the fixed 1:2
+  risk-to-reward defined below, incrementing running counters
+  (var int) for total wins/losses and today's wins/losses, and
+  updating a running peak-to-trough drawdown counter in R.
+- The table must appear on the chart the instant the indicator/strategy
+  loads — do not wait for the first signal or trade to draw it. Create
+  the table object once with `var table perfTable = table.new(...)`
+  outside any signal-dependent condition, and update/populate its
+  cells on every bar where `barstate.islast` is true (so it always
+  reflects the latest state and is visible immediately on load,
+  showing zeros/dashes for any stat with no trades yet rather than
+  staying blank).
+
+RISK-TO-REWARD (applies to every strategy/pair)
+- Default and intended risk-to-reward ratio is fixed at 1:2 (risk 1R
+  to make 2R). Expose "Risk:Reward Multiple" as a numeric input
+  (default 2.0) used both for (a) actual strategy.exit take-profit
+  placement in Strategy mode, and (b) the simulated win/loss
+  classification that feeds the Performance Stats Table.
+- Stop loss reference: Strategy 1 uses the swept extreme (C2's wick);
+  Strategy 2 uses Candle X's open or the FVG zone edge (as already
+  defined in each strategy's CODE REQUIREMENTS). 1R = distance from
+  entry to that stop; target = entry ± (1R × Risk:Reward Multiple).
+
+BREAK-EVEN (optional — off by default)
+- input.bool(false, "Enable Break-Even").
+- input.float("Break-Even Trigger (R)", default 1.0): once an open
+  trade has moved this many R multiples in favor of the entry, move
+  the stop loss to the entry price (break-even) for that trade, both
+  in Strategy mode (via strategy.exit modification / stop update) and
+  in the simulated stream used for the Performance Stats Table (a
+  break-even stop-out counts as neither a win nor a loss — track it as
+  a separate "Break-Even" counter, not included in Win Rate).
+
+MAX TRADES PER DAY (optional cap — off/unlimited by default)
+- input.int("Max Trades Per Day", default 0, minimum 0): 0 means
+  unlimited. When greater than 0, count entries taken today (across
+  ALL enabled strategies/pairs combined, calendar day reset in the
+  chart's/exchange's timezone) and block any further entry triggers
+  once the count reaches this limit, resuming automatically at the
+  start of the next day.
+
+================================================================
 VISUALS
 ================================================================
 - Strategy 1: box/bracket around C1+C2 on the sweep-detection
   timeframe labeled "Sweep [S1 4H/5M]" or "Sweep [S1 1H/1M]" with an
   arrow showing swept direction; "Armed" label at C3's open; OB/FVG box
-  on the entry timeframe; entry triangle/label with price.
+  on the entry timeframe.
 - Strategy 2: box/bracket around the previous candle + Candle X on the
   trend-detection timeframe labeled "Continuation [S2 1H/1M]" or
   "Continuation [S2 4H/5M]" (per pair) with an arrow showing trend
   direction; "Armed" label at the next candle's open; FVG box on the
-  entry timeframe; entry triangle/label with price.
+  entry timeframe.
+- Every confirmed entry (either strategy) gets the BUY/SELL label
+  described above at the entry bar.
+- Performance Stats Table pinned to the top-right corner of the chart
+  (see GLOBAL FEATURES), only drawn when "Show Performance Table" is
+  ON.
 - Use visually distinct colors/label prefixes ("S1" vs "S2") so signals
   from the two strategies are never confused, especially when both are
   enabled at once.
@@ -238,6 +327,8 @@ ALERTS
   "Setup Armed (Next Candle Open)", "FVG Formed", "Entry Triggered"
   (long/short), each labeled with the active pair ("S2 1H/1M" or
   "S2 4H/5M").
+- Global: alertcondition() for "Break-Even Triggered" and "Max Trades
+  Per Day Reached" (fires once when the daily cap is hit).
 
 ================================================================
 INPUTS (user-configurable, grouped by strategy)
@@ -278,9 +369,23 @@ Strategy 2:
 - Require full-body close beyond previous candle (bool, default true)
 - Max bars/hours to wait for entry after arming (int, per pair)
 
-Shared:
+Shared (global, apply across both strategies):
 - Colors for bullish/bearish zones and labels, with separate color sets
   per strategy/pair so all active signals stay visually distinct.
+- "Enable Session Filter" (bool, default false)
+  - "Session Preset" (dropdown: London / New York / Asian / London-NY
+    Overlap / Custom, default London)
+  - "Custom Session" (session time-range input, used when preset =
+    Custom)
+  - "Session Timezone" (string input, default chart timezone)
+- "Show Performance Table" (bool, default true) — renders the Win
+  Rate / Wins / Losses / Daily Win / Daily Loss / Drawdown table in
+  the top-right corner
+- "Risk:Reward Multiple" (float, default 2.0, i.e. 1:2 risk-to-reward)
+- "Enable Break-Even" (bool, default false)
+  - "Break-Even Trigger (R)" (float, default 1.0)
+- "Max Trades Per Day" (int, default 0 = unlimited), counted across
+  all enabled strategies/pairs combined
 
 ================================================================
 CODE REQUIREMENTS
@@ -306,6 +411,11 @@ CODE REQUIREMENTS
   loss at the swept extreme; Strategy 2: stop loss at Candle X's open
   or the FVG zone edge; both with a user-defined take-profit R
   multiple).
+- The Performance Stats Table must be created once with `var table` at
+  the top level (not inside an `if` tied to a signal) and redrawn on
+  every `barstate.islast` bar, so it is visible immediately when the
+  script is first added to the chart — never blank or missing until a
+  trade occurs.
 ```
 
 ---
