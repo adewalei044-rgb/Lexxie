@@ -133,11 +133,18 @@ bearColor = input.color(color.new(color.red, 0),  "Bearish Zone / Label Color", 
 // HELPER FUNCTIONS
 // ============================================================================
 
-// Last fully CLOSED candle on a given timeframe. Uses the [1] offset inside
-// the security() expression so it always reflects the last confirmed bar of
-// that timeframe (non-repainting), one HTF-bar later than the live-forming one.
-f_closedHTF(tf) =>
-    [o, h, l, c, t] = request.security(syminfo.tickerid, tf, [open[1], high[1], low[1], close[1], time[1]], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+// CURRENT (possibly still-forming) candle on a given timeframe — the most
+// basic, standard request.security() usage with no [1] offset inside the
+// expression. Each calling function tracks the PREVIOUS fetch itself (in
+// var state) to detect when this timeframe's bar has rolled over, and to
+// recover the final OHLC of the candle that just closed. This avoids a
+// known Pine gotcha where combining historical-offset operators like [1]
+// directly inside a request.security() expression can behave unreliably;
+// keeping request.security() to plain "current value" calls and doing all
+// "what was the previous bar" bookkeeping in ordinary script state is the
+// standard, well-tested approach.
+f_htfNow(tf) =>
+    [o, h, l, c, t] = request.security(syminfo.tickerid, tf, [open, high, low, close, time], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
     [o, h, l, c, t]
 
 f_sessionString(preset, custom) =>
@@ -155,16 +162,20 @@ f_inSession(tf) =>
     not enableSession or not na(time(tf, sessString, sessionTZ))
 
 // Trend direction for Strategy 2, evaluated on the trend-detection timeframe.
+// Uses the CURRENT (live) HTF close/EMA — acceptable here since this is a
+// continuous directional filter, not a discrete candle pattern, so it's fine
+// for it to track the live-forming HTF candle rather than needing a frozen
+// closed-candle boundary the way sweep/continuation detection does.
 f_trendDir(tf, method, emaLen, swingN, manualBias) =>
-    float closeVal = request.security(syminfo.tickerid, tf, close[1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+    float closeVal = request.security(syminfo.tickerid, tf, close, lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
     int dirOut = 0
     if method == "Manual"
         dirOut := manualBias == "Bullish" ? 1 : -1
     else if method == "Auto (EMA)"
-        float emaVal = request.security(syminfo.tickerid, tf, ta.ema(close, emaLen)[1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+        float emaVal = request.security(syminfo.tickerid, tf, ta.ema(close, emaLen), lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
         dirOut := closeVal > emaVal ? 1 : closeVal < emaVal ? -1 : 0
     else
-        float pastClose = request.security(syminfo.tickerid, tf, close[swingN + 1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+        float pastClose = request.security(syminfo.tickerid, tf, close[swingN], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
         dirOut := closeVal > pastClose ? 1 : closeVal < pastClose ? -1 : 0
     dirOut
 
@@ -228,8 +239,24 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
     var float tpPx     = na
     var bool  beDone    = false
 
-    var int lastSweepTime = na
-    var int lastEntryTime = na
+    // Live-candle trackers. Each bar we fetch the CURRENT (possibly still
+    // forming) sweep-TF / entry-TF candle via f_htfNow (no [1] inside the
+    // security() expression — that combination is a known Pine gotcha that
+    // can silently return stale/frozen data). When the fetched timestamp
+    // differs from what we stored LAST bar, the timeframe just rolled over,
+    // which means the values we stored LAST bar are the final, closed OHLC
+    // of the candle that just finished. This is the standard non-repainting
+    // "detect HTF close" pattern.
+    var float curSO = na
+    var float curSH = na
+    var float curSL = na
+    var float curSC = na
+    var int   curST = na
+    var float curEO = na
+    var float curEH = na
+    var float curEL = na
+    var float curEC = na
+    var int   curET = na
 
     int  result      = 0
     bool justEntered = false
@@ -240,63 +267,71 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
     pairEnabled = sweepOn and entryOn
 
     if pairEnabled
-        [so, sh, sl_, sc, st] = f_closedHTF(sweepTF)
-        [eo, eh, el, ec, et]  = f_closedHTF(entryTF)
+        [so, sh, sl_, sc, st] = f_htfNow(sweepTF)
+        [eo, eh, el, ec, et]  = f_htfNow(entryTF)
 
-        // Use a persistent "last processed time" guard rather than comparing
-        // to [1] (previous chart bar) — on a realtime bar this block can be
-        // re-evaluated on every tick, and comparing only to the prior CHART
-        // bar would let this fire repeatedly (and re-shift state) on every
-        // tick of the same still-forming bar. Tracking the last time we
-        // actually processed makes this idempotent no matter how many times
-        // it re-evaluates within one bar.
-        newSweepBar = not na(st) and st != lastSweepTime
-        newEntryBar = not na(et) and et != lastEntryTime
-        if newEntryBar
-            lastEntryTime := et
+        newSweepBar = not na(curST) and st != curST
+        newEntryBar = not na(curET) and et != curET
 
-        // STEP 1 — shift and detect the sweep pair (C1 = reference, C2 = sweep)
+        // Snapshot of what curS*/curE* held BEFORE this bar's update below —
+        // i.e. the final OHLC of the sweep-TF / entry-TF candle that just closed.
+        float closedSO = curSO
+        float closedSH = curSH
+        float closedSL = curSL
+        float closedSC = curSC
+        float closedEO = curEO
+        float closedEH = curEH
+        float closedEL = curEL
+        float closedEC = curEC
+
+        // STEP 1 — shift and detect the sweep pair (C1 = reference, C2 = sweep).
+        // Only shift/redetect while NOT already armed — otherwise a setup
+        // that's armed and waiting on the entry TF would have its c1/c2 (and
+        // therefore its stop-loss reference) silently overwritten by every
+        // subsequent sweep-TF close, corrupting the stop level. While armed,
+        // we instead just check invalidation against the newly-closed candle.
         if newSweepBar
-            lastSweepTime := st
-            htfBarSeen    := true
-            c1o := c2o
-            c1h := c2h
-            c1l := c2l
-            c1c := c2c
-            c2o := so
-            c2h := sh
-            c2l := sl_
-            c2c := sc
+            htfBarSeen := true
 
-            if not na(c1c) and not inTrade and not armed
-                bool c1Bull    = c1c > c1o
-                bool c2Bull    = c2c > c2o
-                bool oppColors = c1Bull != c2Bull
-                bool bearSweep = c2l < c1l and (requireFullClose ? c2c < c1l : true)
-                bool bullSweep = c2h > c1h and (requireFullClose ? c2c > c1h : true)
+            if not armed
+                c1o := c2o
+                c1h := c2h
+                c1l := c2l
+                c1c := c2c
+                c2o := closedSO
+                c2h := closedSH
+                c2l := closedSL
+                c2c := closedSC
 
-                if oppColors and bearSweep and not bullSweep
-                    dirState     := 1
-                    armed        := true
-                    waitingEntry := true
-                    barsWaited   := 0
-                    sweepJustDetected := true
-                    box.new(bar_index[1], math.max(c1h, c2h), bar_index, math.min(c1l, c2l), border_color = bullCol, bgcolor = color.new(bullCol, 85), text = "Sweep [" + pairTag + "]", text_color = bullCol, text_size = size.small)
-                    label.new(bar_index, low, "Armed - watching entry TF", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.tiny)
-                else if oppColors and bullSweep and not bearSweep
-                    dirState     := -1
-                    armed        := true
-                    waitingEntry := true
-                    barsWaited   := 0
-                    sweepJustDetected := true
-                    box.new(bar_index[1], math.max(c1h, c2h), bar_index, math.min(c1l, c2l), border_color = bearCol, bgcolor = color.new(bearCol, 85), text = "Sweep [" + pairTag + "]", text_color = bearCol, text_size = size.small)
-                    label.new(bar_index, high, "Armed - watching entry TF", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.tiny)
+                if not na(c1c)
+                    bool c1Bull    = c1c > c1o
+                    bool c2Bull    = c2c > c2o
+                    bool oppColors = c1Bull != c2Bull
+                    bool bearSweep = c2l < c1l and (requireFullClose ? c2c < c1l : true)
+                    bool bullSweep = c2h > c1h and (requireFullClose ? c2c > c1h : true)
 
-            if armed and waitingEntry
-                if dirState == 1 and sc < c2l
+                    if oppColors and bearSweep and not bullSweep
+                        dirState     := 1
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                        sweepJustDetected := true
+                        box.new(bar_index[1], math.max(c1h, c2h), bar_index, math.min(c1l, c2l), border_color = bullCol, bgcolor = color.new(bullCol, 85), text = "Sweep [" + pairTag + "]", text_color = bullCol, text_size = size.small)
+                        label.new(bar_index, low, "Armed - watching entry TF", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.tiny)
+                    else if oppColors and bullSweep and not bearSweep
+                        dirState     := -1
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                        sweepJustDetected := true
+                        box.new(bar_index[1], math.max(c1h, c2h), bar_index, math.min(c1l, c2l), border_color = bearCol, bgcolor = color.new(bearCol, 85), text = "Sweep [" + pairTag + "]", text_color = bearCol, text_size = size.small)
+                        label.new(bar_index, high, "Armed - watching entry TF", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.tiny)
+
+            else if waitingEntry
+                if dirState == 1 and closedSC < c2l
                     armed        := false
                     waitingEntry := false
-                if dirState == -1 and sc > c2h
+                if dirState == -1 and closedSC > c2h
                     armed        := false
                     waitingEntry := false
 
@@ -319,10 +354,10 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
             e2h := e3h
             e2l := e3l
             e2c := e3c
-            e3o := eo
-            e3h := eh
-            e3l := el
-            e3c := ec
+            e3o := closedEO
+            e3h := closedEH
+            e3l := closedEL
+            e3c := closedEC
 
         bool zoneJustSet = false
         if newEntryBar and armed and waitingEntry and not inTrade
@@ -365,10 +400,11 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
         // with a 5M entry pair) — request.security() pulling a LOWER
         // timeframe than the chart is unreliable, so mitigation would
         // rarely or never register, producing zero trades even though a
-        // valid setup existed on the actual 5M/1M data. Since e3 is always
-        // a fully closed candle (via f_closedHTF's non-repainting [1]
-        // trick), this check is inherently non-repainting without needing
-        // a barstate.isconfirmed gate. zoneJustSet prevents mitigating a
+        // valid setup existed on the actual 5M/1M data. Since e3 is only
+        // ever assigned from a snapshot taken the instant the entry-TF's
+        // live candle rolled over (see f_htfNow / closedE* above), this
+        // check is inherently non-repainting without needing a
+        // barstate.isconfirmed gate. zoneJustSet prevents mitigating a
         // zone using the very candle that just formed it.
         if newEntryBar and not zoneJustSet and armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF)
             if dirState == 1 and e3l <= obfvgTop and e3c > obfvgBot and e3c > e3o
@@ -433,6 +469,19 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 obfvgTop := na
                 obfvgBot := na
 
+        // Update live-candle trackers to this bar's fetch, unconditionally,
+        // so next bar can detect the rollover the same way.
+        curSO := so
+        curSH := sh
+        curSL := sl_
+        curSC := sc
+        curST := st
+        curEO := eo
+        curEH := eh
+        curEL := el
+        curEC := ec
+        curET := et
+
     [result, justEntered, dirState, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen]
 
 // ============================================================================
@@ -474,8 +523,18 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
     var float tpPx     = na
     var bool  beDone    = false
 
-    var int lastTrendTime = na
-    var int lastEntryTime = na
+    // Live-candle trackers — see the matching comment in f_sweepPair for why
+    // this replaces the old [1]-inside-security() technique.
+    var float curTO = na
+    var float curTH = na
+    var float curTL = na
+    var float curTC = na
+    var int   curTT = na
+    var float curEO = na
+    var float curEH = na
+    var float curEL = na
+    var float curEC = na
+    var int   curET = na
 
     int  result      = 0
     bool justEntered = false
@@ -486,57 +545,67 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
     pairEnabled = trendOn and entryOn
 
     if pairEnabled
-        [to_, th, tl, tc, tt] = f_closedHTF(trendTF)
-        [eo, eh, el, ec, et]  = f_closedHTF(entryTF)
+        [to_, th, tl, tc, tt] = f_htfNow(trendTF)
+        [eo, eh, el, ec, et]  = f_htfNow(entryTF)
 
-        // Persistent last-processed-time guard (see f_sweepPair for why this
-        // is safer than comparing to [1] on realtime multi-tick bars).
-        newTrendBar = not na(tt) and tt != lastTrendTime
-        newEntryBar = not na(et) and et != lastEntryTime
-        if newEntryBar
-            lastEntryTime := et
+        newTrendBar = not na(curTT) and tt != curTT
+        newEntryBar = not na(curET) and et != curET
+
+        // Snapshot of what curT*/curE* held BEFORE this bar's update below —
+        // i.e. the final OHLC of the trend-TF / entry-TF candle that just closed.
+        float closedTO = curTO
+        float closedTH = curTH
+        float closedTL = curTL
+        float closedTC = curTC
+        float closedEO = curEO
+        float closedEH = curEH
+        float closedEL = curEL
+        float closedEC = curEC
 
         trendDirNow = f_trendDir(trendTF, trendMethod, emaLen, swingN, manualBias)
 
+        // Only shift/redetect while NOT already armed — see f_sweepPair for
+        // why re-shifting p_/x_ while armed would corrupt the stop reference.
         if newTrendBar
-            lastTrendTime := tt
-            htfBarSeen    := true
-            p_o := x_o
-            p_h := x_h
-            p_l := x_l
-            p_c := x_c
-            x_o := to_
-            x_h := th
-            x_l := tl
-            x_c := tc
+            htfBarSeen := true
 
-            if not na(p_c) and not inTrade and not armed
-                bool xBull    = x_c > x_o
-                bool contBull = trendDirNow == 1 and xBull and (requireFullClose ? x_c > p_h : x_h > p_h)
-                bool contBear = trendDirNow == -1 and not xBull and (requireFullClose ? x_c < p_l : x_l < p_l)
+            if not armed
+                p_o := x_o
+                p_h := x_h
+                p_l := x_l
+                p_c := x_c
+                x_o := closedTO
+                x_h := closedTH
+                x_l := closedTL
+                x_c := closedTC
 
-                if contBull
-                    dirState     := 1
-                    armed        := true
-                    waitingEntry := true
-                    barsWaited   := 0
-                    contJustDetected := true
-                    box.new(bar_index[1], math.max(p_h, x_h), bar_index, math.min(p_l, x_l), border_color = bullCol, bgcolor = color.new(bullCol, 85), text = "Continuation [" + pairTag + "]", text_color = bullCol, text_size = size.small)
-                    label.new(bar_index, low, "Armed - watching entry TF", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.tiny)
-                else if contBear
-                    dirState     := -1
-                    armed        := true
-                    waitingEntry := true
-                    barsWaited   := 0
-                    contJustDetected := true
-                    box.new(bar_index[1], math.max(p_h, x_h), bar_index, math.min(p_l, x_l), border_color = bearCol, bgcolor = color.new(bearCol, 85), text = "Continuation [" + pairTag + "]", text_color = bearCol, text_size = size.small)
-                    label.new(bar_index, high, "Armed - watching entry TF", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.tiny)
+                if not na(p_c)
+                    bool xBull    = x_c > x_o
+                    bool contBull = trendDirNow == 1 and xBull and (requireFullClose ? x_c > p_h : x_h > p_h)
+                    bool contBear = trendDirNow == -1 and not xBull and (requireFullClose ? x_c < p_l : x_l < p_l)
 
-            if armed and waitingEntry
-                if dirState == 1 and tc < x_o
+                    if contBull
+                        dirState     := 1
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                        contJustDetected := true
+                        box.new(bar_index[1], math.max(p_h, x_h), bar_index, math.min(p_l, x_l), border_color = bullCol, bgcolor = color.new(bullCol, 85), text = "Continuation [" + pairTag + "]", text_color = bullCol, text_size = size.small)
+                        label.new(bar_index, low, "Armed - watching entry TF", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.tiny)
+                    else if contBear
+                        dirState     := -1
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                        contJustDetected := true
+                        box.new(bar_index[1], math.max(p_h, x_h), bar_index, math.min(p_l, x_l), border_color = bearCol, bgcolor = color.new(bearCol, 85), text = "Continuation [" + pairTag + "]", text_color = bearCol, text_size = size.small)
+                        label.new(bar_index, high, "Armed - watching entry TF", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.tiny)
+
+            else if waitingEntry
+                if dirState == 1 and closedTC < x_o
                     armed        := false
                     waitingEntry := false
-                if dirState == -1 and tc > x_o
+                if dirState == -1 and closedTC > x_o
                     armed        := false
                     waitingEntry := false
 
@@ -554,10 +623,10 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
             e2o := e3o
             e2h := e3h
             e2l := e3l
-            e3o := eo
-            e3h := eh
-            e3l := el
-            e3c := ec
+            e3o := closedEO
+            e3h := closedEH
+            e3l := closedEL
+            e3c := closedEC
 
         // ENTRY-TF FVG detection (trend-direction pullback zone only, no OB for S2)
         bool zoneJustSet = false
@@ -645,6 +714,19 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 armed  := false
                 fvgTop := na
                 fvgBot := na
+
+        // Update live-candle trackers to this bar's fetch, unconditionally,
+        // so next bar can detect the rollover the same way.
+        curTO := to_
+        curTH := th
+        curTL := tl
+        curTC := tc
+        curTT := tt
+        curEO := eo
+        curEH := eh
+        curEL := el
+        curEC := ec
+        curET := et
 
     [result, justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
 
@@ -790,9 +872,13 @@ if showTable
 // - Written directly from the prompt spec; not yet run through the TradingView
 //   Pine compiler. Paste into the Pine Editor and report any error messages
 //   back so they can be fixed line-by-line.
-// - "Closed HTF candle" detection uses the [1]-offset request.security trick,
-//   which is non-repainting but always one HTF bar behind the live-forming
-//   candle — appropriate here since every pattern is defined on CLOSED candles.
+// - "Closed HTF candle" detection fetches the CURRENT/live HTF candle every
+//   bar via request.security() (f_htfNow, no [1] inside the expression) and
+//   tracks the previous fetch in ordinary var state; when the fetched
+//   timestamp changes, the PRIOR stored values are the just-closed candle's
+//   final OHLC. This is non-repainting and always one HTF bar behind the
+//   live-forming candle — appropriate since every pattern is defined on
+//   CLOSED candles.
 // - Entry mitigation/rejection is evaluated against the entry timeframe's
 //   own closed candle (via request.security), not the chart's bars, so
 //   detection works on any chart timeframe. Order FILL timing is still
