@@ -296,6 +296,49 @@ MAX TRADES PER DAY (optional cap — off/unlimited by default)
   once the count reaches this limit, resuming automatically at the
   start of the next day.
 
+WEBHOOK-TRADABLE ALERTS (for automated execution via a broker/bot)
+- input.bool(true, "Enable Webhook Alerts"): when ON, every entry (and
+  exit) fires an alert whose message body is a JSON payload that a
+  webhook-based trading bot (e.g. a broker API relay, 3Commas,
+  Alertatron, or a custom receiver) can parse directly — not just a
+  human-readable string.
+- Default JSON template (fire via `alert(message, freq)` at the exact
+  bar an entry/exit condition is confirmed):
+    {
+      "strategy": "{{strategy_tag}}",      // e.g. "S1" or "S2"
+      "pair": "{{pair_tag}}",              // e.g. "4H/5M", "1H/1M"
+      "action": "{{action}}",              // "buy", "sell", "close_long", "close_short"
+      "symbol": "{{ticker}}",
+      "price": {{close}},
+      "stop_loss": {{stop_price}},
+      "take_profit": {{target_price}},
+      "risk_reward": {{rr_multiple}},
+      "time": "{{time}}"
+    }
+  Expose the JSON template as a multi-line text input (`input.text_area`)
+  pre-filled with the default above, so the user can adapt field names
+  to whatever their specific webhook receiver expects, without editing
+  code. Substitute the bracketed placeholders with the script's actual
+  values (strategy/pair tag, computed stop/target prices, current
+  bar's close/time/ticker) at alert time using string.format or string
+  concatenation — Pine's built-in `{{ticker}}`/`{{close}}`/`{{time}}`
+  placeholders may also be used directly inside the alert message
+  string where TradingView supports them.
+- Fire one webhook alert per entry (long/short) and, if Strategy mode
+  with Break-Even/take-profit/stop-loss exits is enabled, one webhook
+  alert per exit event too (target hit, stop hit, break-even move),
+  each with its own "action" value, so the receiving bot can open and
+  close positions automatically.
+- Use `alert(message, freq=alert.freq_once_per_bar_close)` by default
+  (confirmed-close firing, avoids duplicate/repainted signals on a
+  live bar) with an input toggle "Fire Alerts Intra-bar" (bool, default
+  false) to switch to `alert.freq_once_per_bar` for users who need
+  faster execution and accept the repaint risk.
+- If built in Strategy mode, also set `alert_message` on every
+  `strategy.entry()` / `strategy.close()` / `strategy.exit()` call
+  using the same JSON template, so TradingView's built-in "Order
+  fills" alert option produces webhook-ready payloads too.
+
 ================================================================
 VISUALS
 ================================================================
@@ -329,6 +372,11 @@ ALERTS
   "S2 4H/5M").
 - Global: alertcondition() for "Break-Even Triggered" and "Max Trades
   Per Day Reached" (fires once when the daily cap is hit).
+- When "Enable Webhook Alerts" is ON, every Entry Triggered alert (and
+  every exit event in Strategy mode) additionally fires via `alert()`
+  with the JSON payload described in GLOBAL FEATURES → WEBHOOK-TRADABLE
+  ALERTS, so the same signal can drive an automated broker/bot through
+  a TradingView webhook URL, not just a human notification.
 
 ================================================================
 INPUTS (user-configurable, grouped by strategy)
@@ -386,6 +434,12 @@ Shared (global, apply across both strategies):
   - "Break-Even Trigger (R)" (float, default 1.0)
 - "Max Trades Per Day" (int, default 0 = unlimited), counted across
   all enabled strategies/pairs combined
+- "Enable Webhook Alerts" (bool, default true)
+  - "Webhook JSON Template" (text area, pre-filled with the default
+    JSON payload shown in GLOBAL FEATURES → WEBHOOK-TRADABLE ALERTS)
+  - "Fire Alerts Intra-bar" (bool, default false; ON uses
+    alert.freq_once_per_bar for faster execution and repaint risk,
+    OFF uses alert.freq_once_per_bar_close for confirmed signals)
 
 ================================================================
 CODE REQUIREMENTS
