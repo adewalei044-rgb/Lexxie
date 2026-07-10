@@ -200,6 +200,9 @@ f_sweepPair(pairTag, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB
     var float tpPx     = na
     var bool  beDone    = false
 
+    var int lastSweepTime = na
+    var int lastEntryTime = na
+
     int  result      = 0
     bool justEntered = false
 
@@ -209,11 +212,21 @@ f_sweepPair(pairTag, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB
         [so, sh, sl_, sc, st] = f_closedHTF(sweepTF)
         [eo, eh, el, ec, et]  = f_closedHTF(entryTF)
 
-        newSweepBar = not na(st[1]) and st != st[1]
-        newEntryBar = not na(et[1]) and et != et[1]
+        // Use a persistent "last processed time" guard rather than comparing
+        // to [1] (previous chart bar) — on a realtime bar this block can be
+        // re-evaluated on every tick, and comparing only to the prior CHART
+        // bar would let this fire repeatedly (and re-shift state) on every
+        // tick of the same still-forming bar. Tracking the last time we
+        // actually processed makes this idempotent no matter how many times
+        // it re-evaluates within one bar.
+        newSweepBar = not na(st) and st != lastSweepTime
+        newEntryBar = not na(et) and et != lastEntryTime
+        if newEntryBar
+            lastEntryTime := et
 
         // STEP 1 — shift and detect the sweep pair (C1 = reference, C2 = sweep)
         if newSweepBar
+            lastSweepTime := st
             c1o := c2o
             c1h := c2h
             c1l := c2l
@@ -260,7 +273,11 @@ f_sweepPair(pairTag, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB
                 waitingEntry := false
 
         // STEP 3 — OB/FVG zone detection on the entry timeframe
-        if newEntryBar and armed and waitingEntry and not inTrade
+        // Rolling entry-TF candle history is maintained on EVERY new entry-TF
+        // close, regardless of armed state, so the buffer is already
+        // up to date the moment a setup arms (rather than stale from
+        // whenever it last updated during a previous armed window).
+        if newEntryBar
             e1o := e2o
             e1h := e2h
             e1l := e2l
@@ -273,6 +290,7 @@ f_sweepPair(pairTag, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB
             e3l := el
             e3c := ec
 
+        if newEntryBar and armed and waitingEntry and not inTrade
             bool  gotZone = false
             float zTop = na
             float zBot = na
@@ -301,8 +319,13 @@ f_sweepPair(pairTag, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB
                 obfvgBot := zBot
                 box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = (useFVG ? "FVG" : "OB") + " [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
 
-        // ENTRY TRIGGER — mitigation + rejection, evaluated on live chart bars
-        if armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF)
+        // ENTRY TRIGGER — mitigation + rejection, evaluated on live chart bars.
+        // Gated by (fireIntrabar or barstate.isconfirmed): by default the
+        // entry only locks in once the chart bar has actually closed, so the
+        // signal, its price levels, and the webhook payload can never be
+        // "undone" by the bar repainting mid-formation. Turning on
+        // "Fire Alerts Intra-bar" trades that safety for faster execution.
+        if armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF) and (fireIntrabar or barstate.isconfirmed)
             if dirState == 1 and low <= obfvgTop and close > obfvgBot and close > open
                 inTrade      := true
                 tradeDir     := 1
@@ -395,6 +418,9 @@ f_contPair(pairTag, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swi
     var float tpPx     = na
     var bool  beDone    = false
 
+    var int lastTrendTime = na
+    var int lastEntryTime = na
+
     int  result      = 0
     bool justEntered = false
 
@@ -404,12 +430,17 @@ f_contPair(pairTag, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swi
         [to_, th, tl, tc, tt] = f_closedHTF(trendTF)
         [eo, eh, el, ec, et]  = f_closedHTF(entryTF)
 
-        newTrendBar = not na(tt[1]) and tt != tt[1]
-        newEntryBar = not na(et[1]) and et != et[1]
+        // Persistent last-processed-time guard (see f_sweepPair for why this
+        // is safer than comparing to [1] on realtime multi-tick bars).
+        newTrendBar = not na(tt) and tt != lastTrendTime
+        newEntryBar = not na(et) and et != lastEntryTime
+        if newEntryBar
+            lastEntryTime := et
 
         trendDirNow = f_trendDir(trendTF, trendMethod, emaLen, swingN, manualBias)
 
         if newTrendBar
+            lastTrendTime := tt
             p_o := x_o
             p_h := x_h
             p_l := x_l
@@ -453,8 +484,9 @@ f_contPair(pairTag, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swi
                 armed        := false
                 waitingEntry := false
 
-        // ENTRY-TF FVG detection (trend-direction pullback zone only, no OB for S2)
-        if newEntryBar and armed and waitingEntry and not inTrade
+        // Rolling entry-TF candle history — updated on every new entry-TF
+        // close regardless of armed state (see note in f_sweepPair).
+        if newEntryBar
             e1h := e2h
             e1l := e2l
             e2o := e3o
@@ -465,6 +497,8 @@ f_contPair(pairTag, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swi
             e3l := el
             e3c := ec
 
+        // ENTRY-TF FVG detection (trend-direction pullback zone only, no OB for S2)
+        if newEntryBar and armed and waitingEntry and not inTrade
             bool  gotZone = false
             float zTop = na
             float zBot = na
@@ -482,8 +516,10 @@ f_contPair(pairTag, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swi
                 fvgBot := zBot
                 box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = "FVG [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
 
-        // ENTRY TRIGGER — pullback into FVG, rejection back WITH the trend
-        if armed and waitingEntry and not inTrade and not na(fvgTop) and canTradeMore and f_inSession(entryTF)
+        // ENTRY TRIGGER — pullback into FVG, rejection back WITH the trend.
+        // Gated by (fireIntrabar or barstate.isconfirmed) for the same
+        // no-repaint reason as Strategy 1 — see comment there.
+        if armed and waitingEntry and not inTrade and not na(fvgTop) and canTradeMore and f_inSession(entryTF) and (fireIntrabar or barstate.isconfirmed)
             if dirState == 1 and low <= fvgTop and close > fvgBot and close > open
                 inTrade      := true
                 tradeDir     := 1
@@ -571,25 +607,35 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 
 // ============================================================================
 // AGGREGATE RESULTS INTO GLOBAL COUNTERS
+// f_resultDeltas is a pure function (no outer-scope mutation) that just
+// converts a result code into deltas; the actual += happens at top level,
+// which avoids relying on functions mutating global var state.
 // ============================================================================
-f_applyResult(res) =>
-    if res == 1
-        wins      += 1
-        dailyWin  += 1
-        equityR   += rrMultiple
-    else if res == -1
-        losses    += 1
-        dailyLoss += 1
-        equityR   -= 1.0
-    else if res == 2
-        beCount += 1
-    peakR   := math.max(peakR, equityR)
-    maxDD_R := math.max(maxDD_R, peakR - equityR)
+f_resultDeltas(res) =>
+    int   winD  = res == 1 ? 1 : 0
+    int   lossD = res == -1 ? 1 : 0
+    int   beD   = res == 2 ? 1 : 0
+    float eqD   = res == 1 ? rrMultiple : res == -1 ? -1.0 : 0.0
+    [winD, lossD, beD, eqD]
 
-f_applyResult(s1aRes)
-f_applyResult(s1bRes)
-f_applyResult(s2aRes)
-f_applyResult(s2bRes)
+[w1, l1, b1, eq1] = f_resultDeltas(s1aRes)
+[w2, l2, b2, eq2] = f_resultDeltas(s1bRes)
+[w3, l3, b3, eq3] = f_resultDeltas(s2aRes)
+[w4, l4, b4, eq4] = f_resultDeltas(s2bRes)
+
+winDelta  = w1 + w2 + w3 + w4
+lossDelta = l1 + l2 + l3 + l4
+beDelta   = b1 + b2 + b3 + b4
+eqDelta   = eq1 + eq2 + eq3 + eq4
+
+wins      += winDelta
+losses    += lossDelta
+beCount   += beDelta
+dailyWin  += winDelta
+dailyLoss += lossDelta
+equityR   += eqDelta
+peakR     := math.max(peakR, equityR)
+maxDD_R   := math.max(maxDD_R, peakR - equityR)
 
 tradesThisBar = (s1aEntered ? 1 : 0) + (s1bEntered ? 1 : 0) + (s2aEntered ? 1 : 0) + (s2bEntered ? 1 : 0)
 tradesToday += tradesThisBar
