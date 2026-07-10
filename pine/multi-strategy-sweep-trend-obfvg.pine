@@ -1,0 +1,666 @@
+//@version=6
+indicator("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
+
+// ============================================================================
+// HOW TO USE
+// This script pulls higher-timeframe (sweep/trend) candles via request.security
+// regardless of your chart's timeframe. For entry-trigger precision, open the
+// chart on (or below) the fastest ENTRY timeframe you enable (e.g. a 1-minute
+// chart if you enable the 1M entry pair), since the live mitigation/rejection
+// check is evaluated against the chart's own bars.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// GROUPS
+// ---------------------------------------------------------------------------
+gStrat   = "Strategies"
+g1       = "Strategy 1: Sweep Reversal"
+g2       = "Strategy 2: Trend Continuation"
+gRisk    = "Risk / Trade Management"
+gSession = "Session Filter"
+gTable   = "Performance Table"
+gWebhook = "Webhook Alerts"
+gVisual  = "Visuals"
+
+// ---------------------------------------------------------------------------
+// MASTER STRATEGY TOGGLES
+// ---------------------------------------------------------------------------
+enableS1 = input.bool(true,  "Enable Strategy 1: Sweep Reversal",     group = gStrat)
+enableS2 = input.bool(false, "Enable Strategy 2: Trend Continuation", group = gStrat)
+
+// ---------------------------------------------------------------------------
+// STRATEGY 1 INPUTS
+// ---------------------------------------------------------------------------
+s1_4h_on = input.bool(true,  "4H Sweep Detection: ON/OFF",       group = g1)
+s1_4h_tf = input.timeframe("240", "4H Sweep Detection Timeframe", group = g1)
+s1_5m_on = input.bool(true,  "5M Entry Confirmation: ON/OFF",    group = g1)
+s1_5m_tf = input.timeframe("5",   "5M Entry Confirmation Timeframe", group = g1)
+
+s1_1h_on = input.bool(false, "1H Sweep Detection: ON/OFF",       group = g1)
+s1_1h_tf = input.timeframe("60",  "1H Sweep Detection Timeframe", group = g1)
+s1_1m_on = input.bool(false, "1M Entry Confirmation: ON/OFF",    group = g1)
+s1_1m_tf = input.timeframe("1",   "1M Entry Confirmation Timeframe", group = g1)
+
+s1_requireFullClose  = input.bool(true, "S1: Require Full-Body Close Through Swept Level", group = g1)
+s1_useOB              = input.bool(true, "S1: Use Order Block Detection", group = g1)
+s1_useFVG             = input.bool(true, "S1: Use Fair Value Gap Detection", group = g1)
+s1_maxWaitBars        = input.int(200, "S1: Max Entry-TF Bars to Wait After Arming", minval = 1, group = g1)
+s1_oneSignalPerSweep  = input.bool(true, "S1: One Signal Per Sweep", group = g1)
+
+// ---------------------------------------------------------------------------
+// STRATEGY 2 INPUTS
+// ---------------------------------------------------------------------------
+s2_1h_on = input.bool(true,  "1H Trend Candle Detection: ON/OFF",  group = g2)
+s2_1h_tf = input.timeframe("60",  "1H Trend Candle Detection Timeframe", group = g2)
+s2_1m_on = input.bool(true,  "1M FVG Entry Confirmation: ON/OFF", group = g2)
+s2_1m_tf = input.timeframe("1",   "1M FVG Entry Confirmation Timeframe", group = g2)
+
+s2_4h_on = input.bool(false, "4H Trend Candle Detection: ON/OFF",  group = g2)
+s2_4h_tf = input.timeframe("240", "4H Trend Candle Detection Timeframe", group = g2)
+s2_5m_on = input.bool(false, "5M FVG Entry Confirmation: ON/OFF", group = g2)
+s2_5m_tf = input.timeframe("5",   "5M FVG Entry Confirmation Timeframe", group = g2)
+
+s2_trendMethod = input.string("Auto (EMA)", "S2: Trend Detection Method", options = ["Auto (EMA)", "Auto (Structure)", "Manual"], group = g2)
+s2_emaLen      = input.int(50, "S2: EMA Length (Auto EMA method)", group = g2)
+s2_swingN      = input.int(3,  "S2: Swing Lookback N (Auto Structure method)", group = g2)
+s2_manualBias  = input.string("Bullish", "S2: Manual Trend Bias (Manual method)", options = ["Bullish", "Bearish"], group = g2)
+
+s2_requireFullClose = input.bool(true, "S2: Require Full-Body Close Beyond Previous Candle", group = g2)
+s2_maxWaitBars       = input.int(200, "S2: Max Entry-TF Bars to Wait After Arming", minval = 1, group = g2)
+s2_oneSignalPerCont  = input.bool(true, "S2: One Signal Per Continuation", group = g2)
+
+// ---------------------------------------------------------------------------
+// RISK / TRADE MANAGEMENT (shared)
+// ---------------------------------------------------------------------------
+rrMultiple      = input.float(2.0, "Risk:Reward Multiple (default 1:2)", minval = 0.1, group = gRisk)
+enableBE        = input.bool(false, "Enable Break-Even", group = gRisk)
+beTriggerR      = input.float(1.0, "Break-Even Trigger (R)", minval = 0.1, group = gRisk)
+maxTradesPerDay = input.int(0, "Max Trades Per Day (0 = unlimited)", minval = 0, group = gRisk)
+
+// ---------------------------------------------------------------------------
+// SESSION FILTER (shared, optional)
+// ---------------------------------------------------------------------------
+enableSession = input.bool(false, "Enable Session Filter", group = gSession)
+sessionPreset = input.string("London", "Session Preset", options = ["London", "New York", "Asian", "London-NY Overlap", "Custom"], group = gSession)
+customSession = input.session("0800-1700", "Custom Session (used when preset = Custom)", group = gSession)
+sessionTZ     = input.string("Etc/UTC", "Session Timezone", group = gSession)
+
+// ---------------------------------------------------------------------------
+// PERFORMANCE TABLE (shared)
+// ---------------------------------------------------------------------------
+showTable     = input.bool(true, "Show Performance Table", group = gTable)
+tableBgColor  = input.color(color.new(color.red, 0), "Table Background Color", group = gTable)
+tableTxtColor = input.color(color.white, "Table Text Color", group = gTable)
+
+// ---------------------------------------------------------------------------
+// WEBHOOK ALERTS (shared)
+// ---------------------------------------------------------------------------
+enableWebhook   = input.bool(true, "Enable Webhook Alerts", group = gWebhook)
+webhookTemplate = input.text_area("{\"strategy\":\"{{strategy}}\",\"pair\":\"{{pair}}\",\"action\":\"{{action}}\",\"symbol\":\"{{ticker}}\",\"price\":{{price}},\"stop_loss\":{{sl}},\"take_profit\":{{tp}},\"risk_reward\":{{rr}},\"time\":\"{{time}}\"}", "Webhook JSON Template", group = gWebhook)
+fireIntrabar    = input.bool(false, "Fire Alerts Intra-bar (else on bar close)", group = gWebhook)
+
+// ---------------------------------------------------------------------------
+// VISUAL COLORS (shared)
+// ---------------------------------------------------------------------------
+bullColor = input.color(color.new(color.lime, 0), "Bullish Zone / Label Color", group = gVisual)
+bearColor = input.color(color.new(color.red, 0),  "Bearish Zone / Label Color", group = gVisual)
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// Last fully CLOSED candle on a given timeframe. Uses the [1] offset inside
+// the security() expression so it always reflects the last confirmed bar of
+// that timeframe (non-repainting), one HTF-bar later than the live-forming one.
+f_closedHTF(tf) =>
+    [o, h, l, c, t] = request.security(syminfo.tickerid, tf, [open[1], high[1], low[1], close[1], time[1]], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+    [o, h, l, c, t]
+
+f_sessionString(preset, custom) =>
+    string s = switch preset
+        "London"            => "0700-1600"
+        "New York"          => "1300-2200"
+        "Asian"             => "0000-0900"
+        "London-NY Overlap" => "1300-1600"
+        => custom
+    s
+
+sessString = f_sessionString(sessionPreset, customSession)
+
+f_inSession(tf) =>
+    not enableSession or not na(time(tf, sessString, sessionTZ))
+
+// Trend direction for Strategy 2, evaluated on the trend-detection timeframe.
+f_trendDir(tf, method, emaLen, swingN, manualBias) =>
+    float closeVal = request.security(syminfo.tickerid, tf, close[1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+    int dirOut = 0
+    if method == "Manual"
+        dirOut := manualBias == "Bullish" ? 1 : -1
+    else if method == "Auto (EMA)"
+        float emaVal = request.security(syminfo.tickerid, tf, ta.ema(close, emaLen)[1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+        dirOut := closeVal > emaVal ? 1 : closeVal < emaVal ? -1 : 0
+    else
+        float pastClose = request.security(syminfo.tickerid, tf, close[swingN][1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+        dirOut := closeVal > pastClose ? 1 : closeVal < pastClose ? -1 : 0
+    dirOut
+
+// Webhook JSON builder — substitutes our custom placeholders; TradingView's
+// own {{ticker}} / {{time}} placeholders (if left in the template) are filled
+// in by TradingView itself when the alert fires.
+f_webhookMsg(template, stratTag, pairTag, action, price, sl, tp, rr) =>
+    string msg = template
+    msg := str.replace_all(msg, "{{strategy}}", stratTag)
+    msg := str.replace_all(msg, "{{pair}}", pairTag)
+    msg := str.replace_all(msg, "{{action}}", action)
+    msg := str.replace_all(msg, "{{price}}", str.tostring(price))
+    msg := str.replace_all(msg, "{{sl}}", str.tostring(sl))
+    msg := str.replace_all(msg, "{{tp}}", str.tostring(tp))
+    msg := str.replace_all(msg, "{{rr}}", str.tostring(rr))
+    msg
+
+// ============================================================================
+// STRATEGY 1 ENGINE — SWEEP REVERSAL (called once per pair)
+// Returns: [result, justEntered, tradeDir, entryPx, slPx, tpPx]
+//   result: 0 = nothing resolved this bar, 1 = win, -1 = loss, 2 = break-even exit
+// ============================================================================
+f_sweepPair(pairTag, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB, useFVG, maxWaitBars, oneSignalPerSweep, rr, canTradeMore, bullCol, bearCol) =>
+    var float c1o = na
+    var float c1h = na
+    var float c1l = na
+    var float c1c = na
+    var float c2o = na
+    var float c2h = na
+    var float c2l = na
+    var float c2c = na
+
+    var bool armed        = false
+    var bool waitingEntry = false
+    var int  dirState     = 0
+    var int  barsWaited   = 0
+
+    var float e1o = na
+    var float e1h = na
+    var float e1l = na
+    var float e2o = na
+    var float e2h = na
+    var float e2l = na
+    var float e2c = na
+    var float e3o = na
+    var float e3h = na
+    var float e3l = na
+    var float e3c = na
+
+    var float obfvgTop = na
+    var float obfvgBot = na
+
+    var bool  inTrade  = false
+    var int   tradeDir = 0
+    var float entryPx  = na
+    var float slPx     = na
+    var float tpPx     = na
+    var bool  beDone    = false
+
+    int  result      = 0
+    bool justEntered = false
+
+    pairEnabled = sweepOn and entryOn
+
+    if pairEnabled
+        [so, sh, sl_, sc, st] = f_closedHTF(sweepTF)
+        [eo, eh, el, ec, et]  = f_closedHTF(entryTF)
+
+        newSweepBar = not na(st[1]) and st != st[1]
+        newEntryBar = not na(et[1]) and et != et[1]
+
+        // STEP 1 — shift and detect the sweep pair (C1 = reference, C2 = sweep)
+        if newSweepBar
+            c1o := c2o
+            c1h := c2h
+            c1l := c2l
+            c1c := c2c
+            c2o := so
+            c2h := sh
+            c2l := sl_
+            c2c := sc
+
+            if not na(c1c) and not inTrade and not armed
+                bool c1Bull    = c1c > c1o
+                bool c2Bull    = c2c > c2o
+                bool oppColors = c1Bull != c2Bull
+                bool bearSweep = c2l < c1l and (requireFullClose ? c2c < c1l : true)
+                bool bullSweep = c2h > c1h and (requireFullClose ? c2c > c1h : true)
+
+                if oppColors and bearSweep and not bullSweep
+                    dirState     := 1
+                    armed        := true
+                    waitingEntry := true
+                    barsWaited   := 0
+                    box.new(bar_index[1], math.max(c1h, c2h), bar_index, math.min(c1l, c2l), border_color = bullCol, bgcolor = color.new(bullCol, 85), text = "Sweep [" + pairTag + "]", text_color = bullCol, text_size = size.small)
+                    label.new(bar_index, low, "Armed - watching entry TF", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.tiny)
+                else if oppColors and bullSweep and not bearSweep
+                    dirState     := -1
+                    armed        := true
+                    waitingEntry := true
+                    barsWaited   := 0
+                    box.new(bar_index[1], math.max(c1h, c2h), bar_index, math.min(c1l, c2l), border_color = bearCol, bgcolor = color.new(bearCol, 85), text = "Sweep [" + pairTag + "]", text_color = bearCol, text_size = size.small)
+                    label.new(bar_index, high, "Armed - watching entry TF", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.tiny)
+
+            if armed and waitingEntry
+                if dirState == 1 and sc < c2l
+                    armed        := false
+                    waitingEntry := false
+                if dirState == -1 and sc > c2h
+                    armed        := false
+                    waitingEntry := false
+
+        if waitingEntry and newEntryBar
+            barsWaited += 1
+            if barsWaited > maxWaitBars
+                armed        := false
+                waitingEntry := false
+
+        // STEP 3 — OB/FVG zone detection on the entry timeframe
+        if newEntryBar and armed and waitingEntry and not inTrade
+            e1o := e2o
+            e1h := e2h
+            e1l := e2l
+            e2o := e3o
+            e2h := e3h
+            e2l := e3l
+            e2c := e3c
+            e3o := eo
+            e3h := eh
+            e3l := el
+            e3c := ec
+
+            bool  gotZone = false
+            float zTop = na
+            float zBot = na
+
+            if dirState == 1
+                if useFVG and not na(e1h) and e3l > e1h
+                    zTop := e3l
+                    zBot := e1h
+                    gotZone := true
+                else if useOB and not na(e2o) and e2c < e2o and e3c > e3o and e3c > e2h
+                    zTop := e2h
+                    zBot := e2l
+                    gotZone := true
+            else if dirState == -1
+                if useFVG and not na(e1l) and e3h < e1l
+                    zTop := e1l
+                    zBot := e3h
+                    gotZone := true
+                else if useOB and not na(e2o) and e2c > e2o and e3c < e3o and e3c < e2l
+                    zTop := e2h
+                    zBot := e2l
+                    gotZone := true
+
+            if gotZone
+                obfvgTop := zTop
+                obfvgBot := zBot
+                box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = (useFVG ? "FVG" : "OB") + " [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
+
+        // ENTRY TRIGGER — mitigation + rejection, evaluated on live chart bars
+        if armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF)
+            if dirState == 1 and low <= obfvgTop and close > obfvgBot and close > open
+                inTrade      := true
+                tradeDir     := 1
+                entryPx      := close
+                slPx         := math.min(obfvgBot, c2l)
+                float riskPts = entryPx - slPx
+                tpPx         := entryPx + riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+            else if dirState == -1 and high >= obfvgBot and close < obfvgTop and close < open
+                inTrade      := true
+                tradeDir     := -1
+                entryPx      := close
+                slPx         := math.max(obfvgTop, c2h)
+                float riskPts = slPx - entryPx
+                tpPx         := entryPx - riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+
+        // MANAGE OPEN TRADE — break-even, target, stop
+        if inTrade
+            if tradeDir == 1
+                if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
+                    slPx   := entryPx
+                    beDone := true
+                if high >= tpPx
+                    result  := 1
+                    inTrade := false
+                else if low <= slPx
+                    result  := beDone ? 2 : -1
+                    inTrade := false
+            else
+                if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
+                    slPx   := entryPx
+                    beDone := true
+                if low <= tpPx
+                    result  := 1
+                    inTrade := false
+                else if high >= slPx
+                    result  := beDone ? 2 : -1
+                    inTrade := false
+
+            if not inTrade and oneSignalPerSweep
+                armed    := false
+                obfvgTop := na
+                obfvgBot := na
+
+    [result, justEntered, dirState, entryPx, slPx, tpPx]
+
+// ============================================================================
+// STRATEGY 2 ENGINE — TREND CONTINUATION + FVG ENTRY (called once per pair)
+// Returns: [result, justEntered, tradeDir, entryPx, slPx, tpPx]
+// ============================================================================
+f_contPair(pairTag, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swingN, manualBias, requireFullClose, maxWaitBars, oneSignalPerCont, rr, canTradeMore, bullCol, bearCol) =>
+    var float p_o = na
+    var float p_h = na
+    var float p_l = na
+    var float p_c = na
+    var float x_o = na
+    var float x_h = na
+    var float x_l = na
+    var float x_c = na
+
+    var bool armed        = false
+    var bool waitingEntry = false
+    var int  dirState     = 0
+    var int  barsWaited   = 0
+
+    var float e1h = na
+    var float e1l = na
+    var float e2o = na
+    var float e2h = na
+    var float e2l = na
+    var float e3o = na
+    var float e3h = na
+    var float e3l = na
+    var float e3c = na
+
+    var float fvgTop = na
+    var float fvgBot = na
+
+    var bool  inTrade  = false
+    var int   tradeDir = 0
+    var float entryPx  = na
+    var float slPx     = na
+    var float tpPx     = na
+    var bool  beDone    = false
+
+    int  result      = 0
+    bool justEntered = false
+
+    pairEnabled = trendOn and entryOn
+
+    if pairEnabled
+        [to_, th, tl, tc, tt] = f_closedHTF(trendTF)
+        [eo, eh, el, ec, et]  = f_closedHTF(entryTF)
+
+        newTrendBar = not na(tt[1]) and tt != tt[1]
+        newEntryBar = not na(et[1]) and et != et[1]
+
+        trendDirNow = f_trendDir(trendTF, trendMethod, emaLen, swingN, manualBias)
+
+        if newTrendBar
+            p_o := x_o
+            p_h := x_h
+            p_l := x_l
+            p_c := x_c
+            x_o := to_
+            x_h := th
+            x_l := tl
+            x_c := tc
+
+            if not na(p_c) and not inTrade and not armed
+                bool xBull    = x_c > x_o
+                bool contBull = trendDirNow == 1 and xBull and (requireFullClose ? x_c > p_h : x_h > p_h)
+                bool contBear = trendDirNow == -1 and not xBull and (requireFullClose ? x_c < p_l : x_l < p_l)
+
+                if contBull
+                    dirState     := 1
+                    armed        := true
+                    waitingEntry := true
+                    barsWaited   := 0
+                    box.new(bar_index[1], math.max(p_h, x_h), bar_index, math.min(p_l, x_l), border_color = bullCol, bgcolor = color.new(bullCol, 85), text = "Continuation [" + pairTag + "]", text_color = bullCol, text_size = size.small)
+                    label.new(bar_index, low, "Armed - watching entry TF", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.tiny)
+                else if contBear
+                    dirState     := -1
+                    armed        := true
+                    waitingEntry := true
+                    barsWaited   := 0
+                    box.new(bar_index[1], math.max(p_h, x_h), bar_index, math.min(p_l, x_l), border_color = bearCol, bgcolor = color.new(bearCol, 85), text = "Continuation [" + pairTag + "]", text_color = bearCol, text_size = size.small)
+                    label.new(bar_index, high, "Armed - watching entry TF", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.tiny)
+
+            if armed and waitingEntry
+                if dirState == 1 and tc < x_o
+                    armed        := false
+                    waitingEntry := false
+                if dirState == -1 and tc > x_o
+                    armed        := false
+                    waitingEntry := false
+
+        if waitingEntry and newEntryBar
+            barsWaited += 1
+            if barsWaited > maxWaitBars
+                armed        := false
+                waitingEntry := false
+
+        // ENTRY-TF FVG detection (trend-direction pullback zone only, no OB for S2)
+        if newEntryBar and armed and waitingEntry and not inTrade
+            e1h := e2h
+            e1l := e2l
+            e2o := e3o
+            e2h := e3h
+            e2l := e3l
+            e3o := eo
+            e3h := eh
+            e3l := el
+            e3c := ec
+
+            bool  gotZone = false
+            float zTop = na
+            float zBot = na
+            if dirState == 1 and not na(e1h) and e3l > e1h
+                zTop := e3l
+                zBot := e1h
+                gotZone := true
+            else if dirState == -1 and not na(e1l) and e3h < e1l
+                zTop := e1l
+                zBot := e3h
+                gotZone := true
+
+            if gotZone
+                fvgTop := zTop
+                fvgBot := zBot
+                box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = "FVG [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
+
+        // ENTRY TRIGGER — pullback into FVG, rejection back WITH the trend
+        if armed and waitingEntry and not inTrade and not na(fvgTop) and canTradeMore and f_inSession(entryTF)
+            if dirState == 1 and low <= fvgTop and close > fvgBot and close > open
+                inTrade      := true
+                tradeDir     := 1
+                entryPx      := close
+                slPx         := math.min(fvgBot, x_o)
+                float riskPts = entryPx - slPx
+                tpPx         := entryPx + riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+            else if dirState == -1 and high >= fvgBot and close < fvgTop and close < open
+                inTrade      := true
+                tradeDir     := -1
+                entryPx      := close
+                slPx         := math.max(fvgTop, x_o)
+                float riskPts = slPx - entryPx
+                tpPx         := entryPx - riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+
+        if inTrade
+            if tradeDir == 1
+                if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
+                    slPx   := entryPx
+                    beDone := true
+                if high >= tpPx
+                    result  := 1
+                    inTrade := false
+                else if low <= slPx
+                    result  := beDone ? 2 : -1
+                    inTrade := false
+            else
+                if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
+                    slPx   := entryPx
+                    beDone := true
+                if low <= tpPx
+                    result  := 1
+                    inTrade := false
+                else if high >= slPx
+                    result  := beDone ? 2 : -1
+                    inTrade := false
+
+            if not inTrade and oneSignalPerCont
+                armed  := false
+                fvgTop := na
+                fvgBot := na
+
+    [result, justEntered, dirState, entryPx, slPx, tpPx]
+
+// ============================================================================
+// GLOBAL COUNTERS (performance table + max trades/day)
+// ============================================================================
+var int   dailyWin    = 0
+var int   dailyLoss   = 0
+var int   tradesToday = 0
+var int   wins        = 0
+var int   losses      = 0
+var int   beCount     = 0
+var float equityR     = 0.0
+var float peakR       = 0.0
+var float maxDD_R     = 0.0
+
+newDay = ta.change(time("D")) != 0
+if newDay
+    dailyWin    := 0
+    dailyLoss   := 0
+    tradesToday := 0
+
+canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
+
+// ============================================================================
+// RUN STRATEGY 1 — both pairs
+// ============================================================================
+[s1aRes, s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP] = f_sweepPair("S1 4H/5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
+[s1bRes, s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP] = f_sweepPair("S1 1H/1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
+
+// ============================================================================
+// RUN STRATEGY 2 — both pairs
+// ============================================================================
+[s2aRes, s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP] = f_contPair("S2 1H/1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
+[s2bRes, s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP] = f_contPair("S2 4H/5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
+
+// ============================================================================
+// AGGREGATE RESULTS INTO GLOBAL COUNTERS
+// ============================================================================
+f_applyResult(res) =>
+    if res == 1
+        wins      += 1
+        dailyWin  += 1
+        equityR   += rrMultiple
+    else if res == -1
+        losses    += 1
+        dailyLoss += 1
+        equityR   -= 1.0
+    else if res == 2
+        beCount += 1
+    peakR   := math.max(peakR, equityR)
+    maxDD_R := math.max(maxDD_R, peakR - equityR)
+
+f_applyResult(s1aRes)
+f_applyResult(s1bRes)
+f_applyResult(s2aRes)
+f_applyResult(s2bRes)
+
+tradesThisBar = (s1aEntered ? 1 : 0) + (s1bEntered ? 1 : 0) + (s2aEntered ? 1 : 0) + (s2bEntered ? 1 : 0)
+tradesToday += tradesThisBar
+
+// ============================================================================
+// WEBHOOK ALERTS
+// ============================================================================
+f_fireWebhook(entered, stratTag, pairTag, dirVal, entryPxVal, slVal, tpVal) =>
+    if enableWebhook and entered
+        action = dirVal == 1 ? "buy" : "sell"
+        msg = f_webhookMsg(webhookTemplate, stratTag, pairTag, action, entryPxVal, slVal, tpVal, rrMultiple)
+        alert(msg, fireIntrabar ? alert.freq_once_per_bar : alert.freq_once_per_bar_close)
+
+f_fireWebhook(s1aEntered, "S1", "4H/5M", s1aDir, s1aEntryPx, s1aSL, s1aTP)
+f_fireWebhook(s1bEntered, "S1", "1H/1M", s1bDir, s1bEntryPx, s1bSL, s1bTP)
+f_fireWebhook(s2aEntered, "S2", "1H/1M", s2aDir, s2aEntryPx, s2aSL, s2aTP)
+f_fireWebhook(s2bEntered, "S2", "4H/5M", s2bDir, s2bEntryPx, s2bSL, s2bTP)
+
+// ============================================================================
+// GENERIC ALERTCONDITIONS (for TradingView's Alert dialog)
+// ============================================================================
+anyEntryLong  = (s1aEntered and s1aDir == 1)  or (s1bEntered and s1bDir == 1)  or (s2aEntered and s2aDir == 1)  or (s2bEntered and s2bDir == 1)
+anyEntryShort = (s1aEntered and s1aDir == -1) or (s1bEntered and s1bDir == -1) or (s2aEntered and s2aDir == -1) or (s2bEntered and s2bDir == -1)
+alertcondition(anyEntryLong,  title = "Entry Triggered - Long",  message = "Long entry triggered")
+alertcondition(anyEntryShort, title = "Entry Triggered - Short", message = "Short entry triggered")
+
+maxTradesHitNow = maxTradesPerDay > 0 and tradesToday >= maxTradesPerDay and tradesThisBar > 0
+alertcondition(maxTradesHitNow, title = "Max Trades Per Day Reached", message = "Max trades per day reached")
+
+// ============================================================================
+// PERFORMANCE TABLE — top-right corner, red background by default
+// Created once (var, outside any signal condition) so it is visible the
+// instant the script loads; redrawn every barstate.islast bar.
+// ============================================================================
+var table perfTable = table.new(position.top_right, 2, 7, bgcolor = tableBgColor, border_width = 1)
+
+if showTable and barstate.islast
+    winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100.0 : 0.0
+    ddPct   = peakR > 0 ? (maxDD_R / peakR) * 100.0 : 0.0
+
+    table.cell(perfTable, 0, 0, "Performance",       text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 0, "",                  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 1, "Win Rate",          text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 1, str.tostring(winRate, "#.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 2, "Wins / Losses",     text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 2, str.tostring(wins) + " / " + str.tostring(losses), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 3, "Daily Win / Loss",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 3, str.tostring(dailyWin) + " / " + str.tostring(dailyLoss), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 4, "Drawdown (R / %)",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 4, str.tostring(maxDD_R, "#.##") + "R / " + str.tostring(ddPct, "#.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 5, "Break-Even Exits",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 5, str.tostring(beCount), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 6, "Trades Today",      text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 6, str.tostring(tradesToday) + (maxTradesPerDay > 0 ? " / " + str.tostring(maxTradesPerDay) : ""), text_color = tableTxtColor, bgcolor = tableBgColor)
+
+// ============================================================================
+// KNOWN LIMITATIONS / IMPLEMENTATION NOTES
+// - Written directly from the prompt spec; not yet run through the TradingView
+//   Pine compiler. Paste into the Pine Editor and report any error messages
+//   back so they can be fixed line-by-line.
+// - "Closed HTF candle" detection uses the [1]-offset request.security trick,
+//   which is non-repainting but always one HTF bar behind the live-forming
+//   candle — appropriate here since every pattern is defined on CLOSED candles.
+// - Entry mitigation/rejection is evaluated against the chart's own bars, so
+//   run this on a chart timeframe at or below your fastest enabled entry
+//   timeframe for accurate intrabar zone touches.
+// - "Auto (Structure)" trend detection is a simplified higher-high/higher-low
+//   proxy (comparing current close to the close N bars back on that
+//   timeframe), not full swing-pivot structure mapping.
+// - Performance table and win/loss simulation are independent of TradingView's
+//   native strategy tester (this is an indicator, not a strategy) so multiple
+//   pairs can track fully independent simulated trades without position
+//   netting; use the webhook alerts to drive real execution on a broker/bot.
+// ============================================================================
