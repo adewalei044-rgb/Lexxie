@@ -703,11 +703,16 @@ alertcondition(maxTradesHitNow, title = "Max Trades Per Day Reached", message = 
 // ============================================================================
 // PERFORMANCE TABLE — top-right corner, red background by default
 // Created once (var, outside any signal condition) so it is visible the
-// instant the script loads; redrawn every barstate.islast bar.
+// instant the script loads. Redrawn on EVERY bar (not gated to
+// barstate.islast) — islast refers to the last bar of the full dataset,
+// which never becomes true while paused mid-way through Bar Replay, so
+// gating on it left the table blank during replay testing. Writing every
+// bar costs a little more but guarantees the table is always populated,
+// live, in replay, or on history.
 // ============================================================================
 var table perfTable = table.new(position.top_right, 2, 7, bgcolor = tableBgColor, border_width = 1)
 
-if showTable and barstate.islast
+if showTable
     winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100.0 : 0.0
     ddPct   = peakR > 0 ? (maxDD_R / peakR) * 100.0 : 0.0
 
