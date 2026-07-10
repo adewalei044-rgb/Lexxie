@@ -140,7 +140,7 @@ f_trendDir(tf, method, emaLen, swingN, manualBias) =>
         float emaVal = request.security(syminfo.tickerid, tf, ta.ema(close, emaLen)[1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
         dirOut := closeVal > emaVal ? 1 : closeVal < emaVal ? -1 : 0
     else
-        float pastClose = request.security(syminfo.tickerid, tf, close[swingN][1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+        float pastClose = request.security(syminfo.tickerid, tf, close[swingN + 1], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
         dirOut := closeVal > pastClose ? 1 : closeVal < pastClose ? -1 : 0
     dirOut
 
