@@ -266,6 +266,12 @@ PERFORMANCE STATS TABLE (top-right corner of the chart)
   reflects the latest state and is visible immediately on load,
   showing zeros/dashes for any stat with no trades yet rather than
   staying blank).
+- Table background color: RED by default (e.g. color.new(color.red, 0)
+  for the table frame/bgcolor, or a slightly transparent red such as
+  color.new(color.red, 70) so chart data stays visible underneath),
+  with white/light text for contrast on every cell. Expose "Table
+  Background Color" (default red) and "Table Text Color" (default
+  white) as color inputs so the user can restyle without editing code.
 
 RISK-TO-REWARD (applies to every strategy/pair)
 - Default and intended risk-to-reward ratio is fixed at 1:2 (risk 1R
@@ -429,6 +435,8 @@ Shared (global, apply across both strategies):
 - "Show Performance Table" (bool, default true) — renders the Win
   Rate / Wins / Losses / Daily Win / Daily Loss / Drawdown table in
   the top-right corner
+  - "Table Background Color" (color, default red)
+  - "Table Text Color" (color, default white)
 - "Risk:Reward Multiple" (float, default 2.0, i.e. 1:2 risk-to-reward)
 - "Enable Break-Even" (bool, default false)
   - "Break-Even Trigger (R)" (float, default 1.0)
