@@ -4,16 +4,22 @@ Use this prompt with an AI code generator (or as your own build spec in the
 Pine Editor) to produce a TradingView **Pine Script v6** indicator/strategy
 for the setup described below.
 
-The same sweep/reversal logic applies to two selectable timeframe pairs:
+The same sweep/reversal logic applies to two selectable timeframe pairs,
+and every individual timeframe involved gets its own **ON/OFF toggle
+button** in the script settings (not just a single switch per pair):
 
-| Pair | Sweep detection TF | Entry confirmation TF | Enable via settings |
-|------|--------------------|------------------------|----------------------|
-| A    | 4 Hour (4H)        | 5 Minute (5M)          | checkbox, default ON |
-| B    | 1 Hour (1H)        | 1 Minute (1M)          | checkbox, default OFF |
+| Timeframe | Role              | Settings toggle              | Default |
+|-----------|--------------------|------------------------------|---------|
+| 4 Hour (4H) | Sweep detection  | "4H Sweep Detection: ON/OFF" | ON      |
+| 5 Minute (5M) | Entry confirmation | "5M Entry Confirmation: ON/OFF" | ON      |
+| 1 Hour (1H) | Sweep detection  | "1H Sweep Detection: ON/OFF" | OFF     |
+| 1 Minute (1M) | Entry confirmation | "1M Entry Confirmation: ON/OFF" | OFF     |
 
-Both pairs run the identical rules independently — only the timeframes
-differ. Either, both, or neither can be active at a time, controlled by
-tick-box inputs in the script settings.
+A timeframe **pair is only active when both its sweep-detection toggle
+and its entry-confirmation toggle are switched ON** (e.g. 4H ON + 5M ON
+= Pair A running). This also lets an advanced user mix and match (e.g.
+4H sweep detection with 1M entry confirmation) simply by flipping the
+individual toggles, rather than being locked into fixed pairs.
 
 ---
 
@@ -24,24 +30,34 @@ Write a TradingView Pine Script v6 indicator/strategy called
 "Candle Sweep Reversal + OB/FVG Entry (Multi-TF)" with the following logic:
 
 CONTEXT / TIMEFRAMES
-- The script supports two independent, user-toggleable timeframe pairs,
-  each running the exact same sweep + reversal logic:
+- The script supports two timeframe pairs, each running the exact same
+  sweep + reversal logic:
     Pair A: sweep detection on 4 Hour (4H), entry confirmation on 5 Minute (5M)
     Pair B: sweep detection on 1 Hour (1H), entry confirmation on 1 Minute (1M)
-- Add a boolean input checkbox for each pair:
-    "Enable 4H Sweep / 5M Entry" (default true)
-    "Enable 1H Sweep / 1M Entry" (default false)
-  Only run the detection/entry logic for a pair while its checkbox is on.
-  Both pairs may be enabled simultaneously and must track state (armed
-  setups, zones, alerts) independently of one another, clearly labeled
-  by pair (e.g. "4H/5M" vs "1H/1M") in all boxes, labels, and alerts.
-- Also expose the sweep and entry timeframes as free-text timeframe
-  inputs (defaulting to "240"/"5" for Pair A and "60"/"1" for Pair B) so
-  the user can retune either pair without editing code.
-- The script must run on any chart but pull each pair's higher-timeframe
-  candle data via request.security() so it also works when the chart
-  itself is on a lower timeframe, and separately pull each pair's entry
-  timeframe data for the entry confirmation logic.
+- Every individual timeframe gets its OWN boolean ON/OFF toggle input
+  in settings (not one combined switch per pair):
+    input.bool(true,  "4H Sweep Detection")      // ON by default
+    input.bool(true,  "5M Entry Confirmation")   // ON by default
+    input.bool(false, "1H Sweep Detection")      // OFF by default
+    input.bool(false, "1M Entry Confirmation")   // OFF by default
+  A pair is only actively traded when BOTH of its toggles are ON (e.g.
+  4H Sweep Detection ON + 5M Entry Confirmation ON = Pair A running).
+  This also allows mixed combinations if the user turns on, say, 4H
+  Sweep Detection + 1M Entry Confirmation.
+  Only run detection/entry logic for timeframe combinations where both
+  relevant toggles are on, and track state (armed setups, zones,
+  alerts) independently per active combination, clearly labeled by
+  timeframe (e.g. "4H/5M" vs "1H/1M" vs any mixed combo) in all boxes,
+  labels, and alerts.
+- Also expose each of the four timeframes as free-text timeframe
+  inputs (defaulting to "240" for 4H, "5" for 5M, "60" for 1H, "1" for
+  1M) so the user can retune any of them without editing code, in
+  addition to their individual ON/OFF toggle.
+- The script must run on any chart but pull each active sweep-detection
+  timeframe's candle data via request.security() so it also works when
+  the chart itself is on a lower timeframe, and separately pull each
+  active entry-confirmation timeframe's data for the entry confirmation
+  logic.
 
 STEP 1 — LIQUIDITY SWEEP PAIR (run once per enabled timeframe pair, on
 that pair's sweep-detection timeframe, e.g. 4H for Pair A or 1H for Pair B)
@@ -122,19 +138,23 @@ ALERTS
   so the user can tell which timeframe pair fired.
 
 INPUTS (user-configurable)
-- "Enable 4H Sweep / 5M Entry" (bool checkbox, default true)
-  - 4H sweep-detection timeframe (default "240")
-  - 5M entry timeframe (default "5")
-- "Enable 1H Sweep / 1M Entry" (bool checkbox, default false)
-  - 1H sweep-detection timeframe (default "60")
-  - 1M entry timeframe (default "1")
+- "4H Sweep Detection: ON/OFF" (bool toggle, default ON)
+  - 4H sweep-detection timeframe text input (default "240")
+- "5M Entry Confirmation: ON/OFF" (bool toggle, default ON)
+  - 5M entry timeframe text input (default "5")
+- "1H Sweep Detection: ON/OFF" (bool toggle, default OFF)
+  - 1H sweep-detection timeframe text input (default "60")
+- "1M Entry Confirmation: ON/OFF" (bool toggle, default OFF)
+  - 1M entry timeframe text input (default "1")
 - Require full-body close through swept level (bool, default true,
-  applies to both pairs)
+  applies to all active combinations)
 - Use Order Block detection (bool, default true)
 - Use Fair Value Gap detection (bool, default true)
-- Max bars/hours to wait for entry after arming (int, per pair)
+- Max bars/hours to wait for entry after arming (int, per active
+  combination)
 - Colors for bullish/bearish zones and labels (optionally separate
-  color sets per pair so 4H/5M and 1H/1M signals are visually distinct)
+  color sets per combination so 4H/5M, 1H/1M, or any mixed pairing are
+  visually distinct)
 
 CODE REQUIREMENTS
 - Must declare //@version=6 and use current Pine Script v6 syntax
