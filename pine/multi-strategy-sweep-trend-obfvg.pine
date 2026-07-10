@@ -114,7 +114,10 @@ s2_oneSignalPerCont  = input.bool(true, "S2: One Signal Per Continuation", group
 // ---------------------------------------------------------------------------
 // RISK / TRADE MANAGEMENT (shared)
 // ---------------------------------------------------------------------------
-rrMultiple      = input.float(2.0, "Risk:Reward Multiple (default 1:2)", minval = 0.1, group = gRisk)
+rrMultiple      = input.float(2.0, "Risk:Reward Multiple (default 1:2, used by Structural SL/TP method)", minval = 0.1, group = gRisk)
+slTpMethod      = input.string("Structural", "SL/TP Method", options = ["Structural", "Fixed %"], group = gRisk)
+slPercent       = input.float(0.5, "Fixed SL % (used when method = Fixed %)", minval = 0.01, group = gRisk)
+tpPercent       = input.float(1.0, "Fixed TP % (used when method = Fixed %)", minval = 0.01, group = gRisk)
 enableBE        = input.bool(false, "Enable Break-Even", group = gRisk)
 beTriggerR      = input.float(1.0, "Break-Even Trigger (R)", minval = 0.1, group = gRisk)
 maxTradesPerDay = input.int(0, "Max Trades Per Day (0 = unlimited)", minval = 0, group = gRisk)
@@ -222,7 +225,7 @@ f_webhookMsg(template, stratTag, pairTag, action, price, sl, tp, rr) =>
 //   table, so it's visible which stage of the funnel (if any) is producing
 //   nothing when a symbol/timeframe combo yields zero trades.
 // ============================================================================
-f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB, useFVG, maxWaitBars, oneSignalPerSweep, rr, canTradeMore, bullCol, bearCol) =>
+f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClose, useOB, useFVG, maxWaitBars, oneSignalPerSweep, rr, canTradeMore, bullCol, bearCol, slTpMethodP, slPct, tpPct) =>
     var float c1o = na
     var float c1h = na
     var float c1l = na
@@ -430,9 +433,13 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 inTrade      := true
                 tradeDir     := 1
                 entryPx      := e3c
-                slPx         := math.min(obfvgBot, c2l)
-                float riskPts = entryPx - slPx
-                tpPx         := entryPx + riskPts * rr
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 - slPct / 100)
+                    tpPx := entryPx * (1 + tpPct / 100)
+                else
+                    slPx := math.min(obfvgBot, c2l)
+                    float riskPts = entryPx - slPx
+                    tpPx := entryPx + riskPts * rr
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
@@ -443,9 +450,13 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 inTrade      := true
                 tradeDir     := -1
                 entryPx      := e3c
-                slPx         := math.max(obfvgTop, c2h)
-                float riskPts = slPx - entryPx
-                tpPx         := entryPx - riskPts * rr
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 + slPct / 100)
+                    tpPx := entryPx * (1 - tpPct / 100)
+                else
+                    slPx := math.max(obfvgTop, c2h)
+                    float riskPts = slPx - entryPx
+                    tpPx := entryPx - riskPts * rr
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
@@ -503,7 +514,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
 // STRATEGY 2 ENGINE — TREND CONTINUATION + FVG ENTRY (called once per pair)
 // Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
 // ============================================================================
-f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swingN, manualBias, requireFullClose, maxWaitBars, oneSignalPerCont, rr, canTradeMore, bullCol, bearCol) =>
+f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swingN, manualBias, requireFullClose, maxWaitBars, oneSignalPerCont, rr, canTradeMore, bullCol, bearCol, slTpMethodP, slPct, tpPct) =>
     var float p_o = na
     var float p_h = na
     var float p_l = na
@@ -676,9 +687,13 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 inTrade      := true
                 tradeDir     := 1
                 entryPx      := e3c
-                slPx         := math.min(fvgBot, x_o)
-                float riskPts = entryPx - slPx
-                tpPx         := entryPx + riskPts * rr
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 - slPct / 100)
+                    tpPx := entryPx * (1 + tpPct / 100)
+                else
+                    slPx := math.min(fvgBot, x_o)
+                    float riskPts = entryPx - slPx
+                    tpPx := entryPx + riskPts * rr
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
@@ -689,9 +704,13 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 inTrade      := true
                 tradeDir     := -1
                 entryPx      := e3c
-                slPx         := math.max(fvgTop, x_o)
-                float riskPts = slPx - entryPx
-                tpPx         := entryPx - riskPts * rr
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 + slPct / 100)
+                    tpPx := entryPx * (1 - tpPct / 100)
+                else
+                    slPx := math.max(fvgTop, x_o)
+                    float riskPts = slPx - entryPx
+                    tpPx := entryPx - riskPts * rr
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
@@ -809,14 +828,14 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 // ============================================================================
 // RUN STRATEGY 1 — both pairs
 // ============================================================================
-[s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone, s1aHtf] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
-[s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone, s1bHtf] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
+[s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone, s1aHtf] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+[s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone, s1bHtf] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
 
 // ============================================================================
 // RUN STRATEGY 2 — both pairs
 // ============================================================================
-[s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone, s2aHtf] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
-[s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
+[s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone, s2aHtf] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+[s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
 
 // ============================================================================
 // TABLE STATS FROM REAL CLOSED TRADES
