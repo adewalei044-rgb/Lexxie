@@ -873,9 +873,16 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 // that with the feature OFF, a trade that merely happened to close near
 // zero P&L (for any other reason) is never mislabeled "break-even" — it's
 // scored purely win/loss by profit sign instead.
+//
+// Kept deliberately small (0.01% of initial capital = $1 on a $10,000
+// account) — it must stay well BELOW a real full stop-loss in dollar
+// terms, or genuine losses get misclassified as "break-even." A prior
+// value of 0.05% ($5) collided exactly with the default position size
+// ($1,000) x default SL% (0.5%) = a real $5 loss, silently mislabeling
+// full losing trades as break-even.
 // ============================================================================
 var int lastClosedCount = 0
-beThreshold = strategy.initial_capital * 0.0005
+beThreshold = strategy.initial_capital * 0.0001
 
 if strategy.closedtrades > lastClosedCount
     for i = lastClosedCount to strategy.closedtrades - 1
