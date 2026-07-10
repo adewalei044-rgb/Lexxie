@@ -141,15 +141,25 @@ tableTxtColor = input.color(color.white, "Table Text Color", group = gTable)
 // WEBHOOK ALERTS (shared)
 // ---------------------------------------------------------------------------
 enableWebhook   = input.bool(true, "Enable Webhook Alerts", group = gWebhook)
-// Matches the exact schema your broker's bridge requires, with real
-// stop_loss/take_profit/break_even values from this script's own SL/TP math
-// baked in (see f_webhookMsg) — these can't come from TradingView's native
-// {{strategy.*}} placeholders, since there's no built-in placeholder that
-// exposes a strategy.exit() order's stop/limit price. break_even is "true"
-// only on the specific alert fired the instant this script moves the stop
-// to entry; it's "false" on every entry alert.
-webhookTemplate = input.text_area("{\"type\":\"strategy_order\",\"symbol\":\"{{ticker}}\",\"volume\":0.01,\"position_size\":{{position_size}},\"side\":\"{{action}}\",\"current_price\":{{price}},\"exit_on_opposite\":0,\"stop_loss\":{{sl}},\"take_profit\":{{tp}},\"break_even\":{{be}}}", "Webhook JSON Template", group = gWebhook)
-fireIntrabar    = input.bool(false, "Fire Alerts Intra-bar (else on bar close)", group = gWebhook)
+// Fires via TradingView's native "Order fills only" alert condition, NOT
+// "Any alert() function call". The JSON string below is attached directly
+// to each strategy.entry()/strategy.exit() call as that order's
+// alert_message — TradingView fires it automatically the instant that
+// specific order actually fills, no alert() call needed.
+//   {{sl}} / {{tp}} / {{be}}  — baked in by THIS script at the moment the
+//     order is placed, since TradingView has no native placeholder that
+//     exposes a strategy.exit() order's stop/limit price or a "stop just
+//     moved to break-even" event.
+//   {{ticker}}, {{strategy.position_size}}, {{strategy.order.action}},
+//   {{strategy.order.price}} — left untouched here on purpose; TradingView
+//     itself resolves these to the REAL fill data (symbol, resulting
+//     position size, buy/sell, actual fill price) the moment the order
+//     fires, which is more accurate than anything this script could
+//     pre-compute before the fill happens.
+// Setup in TradingView: Add Alert -> Condition: this strategy's name ->
+// Trigger: "Order fills only" -> Message box: leave the default
+// {{strategy.order.alert_message}} placeholder -> Create.
+webhookTemplate = input.text_area("{\"type\":\"strategy_order\",\"symbol\":\"{{ticker}}\",\"volume\":0.01,\"position_size\":{{strategy.position_size}},\"side\":\"{{strategy.order.action}}\",\"current_price\":{{strategy.order.price}},\"exit_on_opposite\":0,\"stop_loss\":{{sl}},\"take_profit\":{{tp}},\"break_even\":{{be}}}", "Webhook JSON Template", group = gWebhook)
 
 // ---------------------------------------------------------------------------
 // VISUAL COLORS (shared)
@@ -210,19 +220,16 @@ f_trendDir(tf, method, emaLen, swingN, manualBias) =>
         dirOut := closeVal > pastClose ? 1 : closeVal < pastClose ? -1 : 0
     dirOut
 
-// Webhook JSON builder — substitutes our custom placeholders; TradingView's
-// own {{ticker}} / {{time}} placeholders (if left in the template) are filled
-// in by TradingView itself when the alert fires.
-f_webhookMsg(template, stratTag, pairTag, action, price, sl, tp, rr, positionSize, isBreakEven) =>
+// Webhook JSON builder — substitutes only OUR custom {{sl}}/{{tp}}/{{be}}
+// placeholders (the values only this script knows). Any TradingView-native
+// placeholders left in the template ({{ticker}}, {{strategy.position_size}},
+// {{strategy.order.action}}, {{strategy.order.price}}, etc.) are passed
+// through untouched — TradingView resolves those itself when the order-fill
+// alert fires, using the alert_message attached to strategy.entry()/exit().
+f_webhookMsg(template, sl, tp, isBreakEven) =>
     string msg = template
-    msg := str.replace_all(msg, "{{strategy}}", stratTag)
-    msg := str.replace_all(msg, "{{pair}}", pairTag)
-    msg := str.replace_all(msg, "{{action}}", action)
-    msg := str.replace_all(msg, "{{price}}", str.tostring(price))
     msg := str.replace_all(msg, "{{sl}}", str.tostring(sl))
     msg := str.replace_all(msg, "{{tp}}", str.tostring(tp))
-    msg := str.replace_all(msg, "{{rr}}", str.tostring(rr))
-    msg := str.replace_all(msg, "{{position_size}}", str.tostring(positionSize))
     msg := str.replace_all(msg, "{{be}}", isBreakEven ? "true" : "false")
     msg
 
@@ -453,8 +460,9 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.long)
-                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                string webhookMsgLong = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.long, alert_message = webhookMsgLong)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
             else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
                 inTrade      := true
@@ -470,8 +478,9 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.short)
-                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                string webhookMsgShort = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.short, alert_message = webhookMsgShort)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
 
         // MANAGE OPEN TRADE — break-even, target, stop. This just moves the
@@ -490,7 +499,8 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                     slPx        := entryPx
                     beDone      := true
                     beTriggered := true
-                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if high >= tpPx or low <= slPx
                     inTrade := false
             else
@@ -498,7 +508,8 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                     slPx        := entryPx
                     beDone      := true
                     beTriggered := true
-                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if low <= tpPx or high >= slPx
                     inTrade := false
 
@@ -710,8 +721,9 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.long)
-                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                string webhookMsgLong = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.long, alert_message = webhookMsgLong)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
             else if dirState == -1 and e3h >= fvgBot and e3c < fvgTop and e3c < e3o
                 inTrade      := true
@@ -727,8 +739,9 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.short)
-                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                string webhookMsgShort = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.short, alert_message = webhookMsgShort)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
 
         // Mirrors the real strategy.exit() order placed at entry above; see
@@ -742,7 +755,8 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                     slPx        := entryPx
                     beDone      := true
                     beTriggered := true
-                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if high >= tpPx or low <= slPx
                     inTrade := false
             else
@@ -750,7 +764,8 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                     slPx        := entryPx
                     beDone      := true
                     beTriggered := true
-                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if low <= tpPx or high >= slPx
                     inTrade := false
 
@@ -920,29 +935,16 @@ htfBarsProcessed += (s1aHtf ? 1 : 0)   + (s1bHtf ? 1 : 0)   + (s2aHtf ? 1 : 0)  
 
 // ============================================================================
 // WEBHOOK ALERTS
-// entryFires: real order-entry alerts, break_even always "false".
-// beFires: a SEPARATE alert fired the instant this script moves a trade's
-// stop to breakeven (slVal is already the new, moved stop by the time this
-// runs), so your bridge can update the SL on the live order — this can't be
-// derived from TradingView's native alert placeholders, since there's no
-// generic "order stop was just moved" event exposed that way.
-// ============================================================================
-f_fireWebhook(fires, stratTag, pairTag, dirVal, entryPxVal, slVal, tpVal, isBE) =>
-    if enableWebhook and fires
-        action = dirVal == 1 ? "buy" : "sell"
-        msg = f_webhookMsg(webhookTemplate, stratTag, pairTag, action, entryPxVal, slVal, tpVal, rrMultiple, strategy.position_size, isBE)
-        alert(msg, fireIntrabar ? alert.freq_once_per_bar : alert.freq_once_per_bar_close)
-
-f_fireWebhook(s1aEntered, "S1", "4H/5M", s1aDir, s1aEntryPx, s1aSL, s1aTP, false)
-f_fireWebhook(s1bEntered, "S1", "1H/1M", s1bDir, s1bEntryPx, s1bSL, s1bTP, false)
-f_fireWebhook(s2aEntered, "S2", "1H/1M", s2aDir, s2aEntryPx, s2aSL, s2aTP, false)
-f_fireWebhook(s2bEntered, "S2", "4H/5M", s2bDir, s2bEntryPx, s2bSL, s2bTP, false)
-
-f_fireWebhook(s1aBE, "S1", "4H/5M", s1aDir, s1aEntryPx, s1aSL, s1aTP, true)
-f_fireWebhook(s1bBE, "S1", "1H/1M", s1bDir, s1bEntryPx, s1bSL, s1bTP, true)
-f_fireWebhook(s2aBE, "S2", "1H/1M", s2aDir, s2aEntryPx, s2aSL, s2aTP, true)
-f_fireWebhook(s2bBE, "S2", "4H/5M", s2bDir, s2bEntryPx, s2bSL, s2bTP, true)
-
+// No alert() calls here anymore — the JSON message for every order is built
+// and attached directly to that order's strategy.entry()/strategy.exit()
+// call as its alert_message (see inside f_sweepPair/f_contPair above). That
+// makes the webhook fire through TradingView's native "Order fills only"
+// alert condition instead of "Any alert() function call": create ONE alert
+// on this strategy with trigger = "Order fills only" and it will fire once
+// per real fill (entry, stop-loss, take-profit, or a break-even-adjusted
+// stop), each carrying the correct baked-in stop_loss/take_profit/break_even
+// plus TradingView's own accurate symbol/side/price/position_size for that
+// specific fill.
 // ============================================================================
 // GENERIC ALERTCONDITIONS (for TradingView's Alert dialog)
 // ============================================================================
