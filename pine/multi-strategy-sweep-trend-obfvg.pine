@@ -740,6 +740,10 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
 // ============================================================================
 var int   dailyWin    = 0
 var int   dailyLoss   = 0
+var int   weeklyWin   = 0
+var int   weeklyLoss  = 0
+var int   monthlyWin  = 0
+var int   monthlyLoss = 0
 var int   tradesToday = 0
 var int   wins        = 0
 var int   losses      = 0
@@ -764,20 +768,27 @@ var float monthMaxDD_Capital = 0.0
 var int curLossStreak      = 0
 var int maxLossStreakMonth = 0
 
-// Both "day" and "month" boundaries are pinned to UTC 00:00 explicitly
-// (via the 3-arg time() overload) rather than relying on time("D")/time("M"),
-// which use the chart's own display timezone — on a symbol like BTCUSD that
-// trades 24/7, that made "Trades Today" / "Daily Win / Loss" roll over at
-// whatever hour the chart's timezone happens to hit midnight, instead of at
-// a fixed, predictable UTC boundary.
+// "Day", "week", and "month" boundaries are all pinned to UTC 00:00
+// explicitly (via the 3-arg time() overload) rather than relying on
+// time("D")/time("W")/time("M"), which use the chart's own display
+// timezone — on a symbol like BTCUSD that trades 24/7, that made these
+// counters roll over at whatever hour the chart's timezone happens to
+// hit midnight, instead of at a fixed, predictable UTC boundary.
 newDay = ta.change(time("D", "0000-2400", "UTC")) != 0
 if newDay
     dailyWin    := 0
     dailyLoss   := 0
     tradesToday := 0
 
+newWeek = ta.change(time("W", "0000-2400", "UTC")) != 0
+if newWeek
+    weeklyWin  := 0
+    weeklyLoss := 0
+
 newMonth = ta.change(time("M", "0000-2400", "UTC")) != 0
 if newMonth
+    monthlyWin         := 0
+    monthlyLoss         := 0
     monthPeakEquity    := strategy.equity
     monthMaxDD_Capital := 0.0
     curLossStreak       := 0
@@ -821,11 +832,15 @@ winDelta  = w1 + w2 + w3 + w4
 lossDelta = l1 + l2 + l3 + l4
 beDelta   = b1 + b2 + b3 + b4
 
-wins      += winDelta
-losses    += lossDelta
-beCount   += beDelta
-dailyWin  += winDelta
-dailyLoss += lossDelta
+wins        += winDelta
+losses      += lossDelta
+beCount     += beDelta
+dailyWin    += winDelta
+dailyLoss   += lossDelta
+weeklyWin   += winDelta
+weeklyLoss  += lossDelta
+monthlyWin  += winDelta
+monthlyLoss += lossDelta
 
 // Losing streak: any win or break-even this bar breaks the streak; a bar
 // with only losses extends it. (Multiple pairs can resolve on the same bar;
@@ -880,7 +895,7 @@ alertcondition(maxTradesHitNow, title = "Max Trades Per Day Reached", message = 
 // bar costs a little more but guarantees the table is always populated,
 // live, in replay, or on history.
 // ============================================================================
-var table perfTable = table.new(position.top_right, 2, 11, bgcolor = tableBgColor, border_width = 1)
+var table perfTable = table.new(position.top_right, 2, 13, bgcolor = tableBgColor, border_width = 1)
 
 if showTable
     winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100.0 : 0.0
@@ -900,14 +915,18 @@ if showTable
     table.cell(perfTable, 1, 5, str.tostring(wins) + " / " + str.tostring(losses), text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 0, 6, "Daily Win / Loss",  text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 1, 6, str.tostring(dailyWin) + " / " + str.tostring(dailyLoss), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 7, "Drawdown (Month, $/%)",  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 7, "$" + str.tostring(monthMaxDD_Capital, "0.##") + " / " + str.tostring(ddPct, "0.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 8, "Losing Streak (Month)", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 8, str.tostring(curLossStreak) + " (max " + str.tostring(maxLossStreakMonth) + ")", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 9, "Break-Even Exits",  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 9, str.tostring(beCount), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 10, "Trades Today",      text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 10, str.tostring(tradesToday) + (maxTradesPerDay > 0 ? " / " + str.tostring(maxTradesPerDay) : ""), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 7, "Weekly Win / Loss", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 7, str.tostring(weeklyWin) + " / " + str.tostring(weeklyLoss), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 8, "Monthly Win / Loss", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 8, str.tostring(monthlyWin) + " / " + str.tostring(monthlyLoss), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 9, "Drawdown (Month, $/%)",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 9, "$" + str.tostring(monthMaxDD_Capital, "0.##") + " / " + str.tostring(ddPct, "0.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 10, "Losing Streak (Month)", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 10, str.tostring(curLossStreak) + " (max " + str.tostring(maxLossStreakMonth) + ")", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 11, "Break-Even Exits",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 11, str.tostring(beCount), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 12, "Trades Today",      text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 12, str.tostring(tradesToday) + (maxTradesPerDay > 0 ? " / " + str.tostring(maxTradesPerDay) : ""), text_color = tableTxtColor, bgcolor = tableBgColor)
 
 // ============================================================================
 // KNOWN LIMITATIONS / IMPLEMENTATION NOTES
