@@ -744,18 +744,41 @@ var int   tradesToday = 0
 var int   wins        = 0
 var int   losses      = 0
 var int   beCount     = 0
-var float equityR     = 0.0
-var float peakR       = 0.0
-var float maxDD_R     = 0.0
 var int   sweepsDetected = 0
 var int   zonesFound     = 0
 var int   htfBarsProcessed = 0
+
+// Drawdown is tracked against real account equity (strategy.equity, which
+// already reflects filled orders, commission, and slippage) rather than an
+// R-multiple proxy — this is what actually matters for risk, and it matches
+// what TradingView's own Strategy Tester Max Drawdown reports. Resets at the
+// start of each calendar month (peak re-anchored to that month's starting
+// equity), so the figure reflects "how bad has this month been," not a
+// lifetime-since-inception number.
+var float monthPeakEquity    = strategy.initial_capital
+var float monthMaxDD_Capital = 0.0
+
+// Worst losing streak (consecutive losing trades) within the current month.
+// curLossStreak is the streak in progress; maxLossStreakMonth is the worst
+// it got this month. Both reset at the start of each month.
+var int curLossStreak      = 0
+var int maxLossStreakMonth = 0
 
 newDay = ta.change(time("D")) != 0
 if newDay
     dailyWin    := 0
     dailyLoss   := 0
     tradesToday := 0
+
+newMonth = ta.change(time("M")) != 0
+if newMonth
+    monthPeakEquity    := strategy.equity
+    monthMaxDD_Capital := 0.0
+    curLossStreak       := 0
+    maxLossStreakMonth  := 0
+
+monthPeakEquity    := math.max(monthPeakEquity, strategy.equity)
+monthMaxDD_Capital := math.max(monthMaxDD_Capital, monthPeakEquity - strategy.equity)
 
 canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 
@@ -778,30 +801,36 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 // which avoids relying on functions mutating global var state.
 // ============================================================================
 f_resultDeltas(res) =>
-    int   winD  = res == 1 ? 1 : 0
-    int   lossD = res == -1 ? 1 : 0
-    int   beD   = res == 2 ? 1 : 0
-    float eqD   = res == 1 ? rrMultiple : res == -1 ? -1.0 : 0.0
-    [winD, lossD, beD, eqD]
+    int winD  = res == 1 ? 1 : 0
+    int lossD = res == -1 ? 1 : 0
+    int beD   = res == 2 ? 1 : 0
+    [winD, lossD, beD]
 
-[w1, l1, b1, eq1] = f_resultDeltas(s1aRes)
-[w2, l2, b2, eq2] = f_resultDeltas(s1bRes)
-[w3, l3, b3, eq3] = f_resultDeltas(s2aRes)
-[w4, l4, b4, eq4] = f_resultDeltas(s2bRes)
+[w1, l1, b1] = f_resultDeltas(s1aRes)
+[w2, l2, b2] = f_resultDeltas(s1bRes)
+[w3, l3, b3] = f_resultDeltas(s2aRes)
+[w4, l4, b4] = f_resultDeltas(s2bRes)
 
 winDelta  = w1 + w2 + w3 + w4
 lossDelta = l1 + l2 + l3 + l4
 beDelta   = b1 + b2 + b3 + b4
-eqDelta   = eq1 + eq2 + eq3 + eq4
 
 wins      += winDelta
 losses    += lossDelta
 beCount   += beDelta
 dailyWin  += winDelta
 dailyLoss += lossDelta
-equityR   += eqDelta
-peakR     := math.max(peakR, equityR)
-maxDD_R   := math.max(maxDD_R, peakR - equityR)
+
+// Losing streak: any win or break-even this bar breaks the streak; a bar
+// with only losses extends it. (Multiple pairs can resolve on the same bar;
+// treating a same-bar win+loss combo as "streak broken" and a same-bar
+// multi-loss combo as "streak extended by that count" is a reasonable
+// simplification for this edge case.)
+if winDelta > 0 or beDelta > 0
+    curLossStreak := 0
+else if lossDelta > 0
+    curLossStreak += lossDelta
+maxLossStreakMonth := math.max(maxLossStreakMonth, curLossStreak)
 
 tradesThisBar = (s1aEntered ? 1 : 0) + (s1bEntered ? 1 : 0) + (s2aEntered ? 1 : 0) + (s2bEntered ? 1 : 0)
 tradesToday += tradesThisBar
@@ -845,11 +874,11 @@ alertcondition(maxTradesHitNow, title = "Max Trades Per Day Reached", message = 
 // bar costs a little more but guarantees the table is always populated,
 // live, in replay, or on history.
 // ============================================================================
-var table perfTable = table.new(position.top_right, 2, 10, bgcolor = tableBgColor, border_width = 1)
+var table perfTable = table.new(position.top_right, 2, 11, bgcolor = tableBgColor, border_width = 1)
 
 if showTable
     winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100.0 : 0.0
-    ddPct   = peakR > 0 ? (maxDD_R / peakR) * 100.0 : 0.0
+    ddPct   = monthPeakEquity > 0 ? (monthMaxDD_Capital / monthPeakEquity) * 100.0 : 0.0
 
     table.cell(perfTable, 0, 0, "Performance",       text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 1, 0, "",                  text_color = tableTxtColor, bgcolor = tableBgColor)
@@ -865,12 +894,14 @@ if showTable
     table.cell(perfTable, 1, 5, str.tostring(wins) + " / " + str.tostring(losses), text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 0, 6, "Daily Win / Loss",  text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 1, 6, str.tostring(dailyWin) + " / " + str.tostring(dailyLoss), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 7, "Drawdown (R / %)",  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 7, str.tostring(maxDD_R, "0.##") + "R / " + str.tostring(ddPct, "0.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 8, "Break-Even Exits",  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 8, str.tostring(beCount), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 9, "Trades Today",      text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 9, str.tostring(tradesToday) + (maxTradesPerDay > 0 ? " / " + str.tostring(maxTradesPerDay) : ""), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 7, "Drawdown (Month, $/%)",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 7, "$" + str.tostring(monthMaxDD_Capital, "0.##") + " / " + str.tostring(ddPct, "0.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 8, "Losing Streak (Month)", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 8, str.tostring(curLossStreak) + " (max " + str.tostring(maxLossStreakMonth) + ")", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 9, "Break-Even Exits",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 9, str.tostring(beCount), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 10, "Trades Today",      text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 10, str.tostring(tradesToday) + (maxTradesPerDay > 0 ? " / " + str.tostring(maxTradesPerDay) : ""), text_color = tableTxtColor, bgcolor = tableBgColor)
 
 // ============================================================================
 // KNOWN LIMITATIONS / IMPLEMENTATION NOTES
