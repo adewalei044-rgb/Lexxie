@@ -3,11 +3,20 @@ strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay
 
 // ============================================================================
 // HOW TO USE
-// This script pulls higher-timeframe (sweep/trend) candles via request.security
-// regardless of your chart's timeframe. For entry-trigger precision, open the
-// chart on (or below) the fastest ENTRY timeframe you enable (e.g. a 1-minute
-// chart if you enable the 1M entry pair), since the live mitigation/rejection
-// check is evaluated against the chart's own bars.
+// This script pulls both the sweep/trend timeframe AND the entry timeframe
+// via request.security(), and evaluates mitigation/rejection against the
+// ENTRY TIMEFRAME's own closed candle — not the chart's bars. This means
+// signal DETECTION works correctly regardless of what timeframe you have
+// the chart open on (a 1H chart with a 5M entry pair will still detect
+// every valid 5M mitigation event).
+//
+// However, actual ORDER EXECUTION (strategy.entry/strategy.exit fills) can
+// only happen at the chart's own bar granularity — Pine's strategy engine
+// has no concept of "fill mid-way through a chart bar." So for the most
+// accurate backtest fills/equity curve, still open the chart on (or below)
+// your fastest enabled entry timeframe. Running on a coarser chart will now
+// correctly find and log the same trades, just with fill timing snapped to
+// the coarser chart's bar closes instead of the exact entry-TF candle.
 //
 // BACKTESTING: each of the 4 pair/strategy combinations places real orders
 // via strategy.entry()/strategy.exit() under its own unique ID, so they all
@@ -305,6 +314,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
             e3l := el
             e3c := ec
 
+        bool zoneJustSet = false
         if newEntryBar and armed and waitingEntry and not inTrade
             bool  gotZone = false
             float zTop = na
@@ -330,21 +340,30 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                     gotZone := true
 
             if gotZone
-                obfvgTop := zTop
-                obfvgBot := zBot
+                obfvgTop  := zTop
+                obfvgBot  := zBot
+                zoneJustSet := true
                 box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = (useFVG ? "FVG" : "OB") + " [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
 
-        // ENTRY TRIGGER — mitigation + rejection, evaluated on live chart bars.
-        // Gated by (fireIntrabar or barstate.isconfirmed): by default the
-        // entry only locks in once the chart bar has actually closed, so the
-        // signal, its price levels, and the webhook payload can never be
-        // "undone" by the bar repainting mid-formation. Turning on
-        // "Fire Alerts Intra-bar" trades that safety for faster execution.
-        if armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF) and (fireIntrabar or barstate.isconfirmed)
-            if dirState == 1 and low <= obfvgTop and close > obfvgBot and close > open
+        // ENTRY TRIGGER — mitigation + rejection, evaluated on the ENTRY
+        // TIMEFRAME's own closed candle (e3), NOT the chart's live bars.
+        // This is what makes the script correct no matter what chart
+        // timeframe you display it on: checking against live chart bars
+        // (the old approach) silently broke down whenever the chart's
+        // timeframe was coarser than the entry timeframe (e.g. a 1H chart
+        // with a 5M entry pair) — request.security() pulling a LOWER
+        // timeframe than the chart is unreliable, so mitigation would
+        // rarely or never register, producing zero trades even though a
+        // valid setup existed on the actual 5M/1M data. Since e3 is always
+        // a fully closed candle (via f_closedHTF's non-repainting [1]
+        // trick), this check is inherently non-repainting without needing
+        // a barstate.isconfirmed gate. zoneJustSet prevents mitigating a
+        // zone using the very candle that just formed it.
+        if newEntryBar and not zoneJustSet and armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF)
+            if dirState == 1 and e3l <= obfvgTop and e3c > obfvgBot and e3c > e3o
                 inTrade      := true
                 tradeDir     := 1
-                entryPx      := close
+                entryPx      := e3c
                 slPx         := math.min(obfvgBot, c2l)
                 float riskPts = entryPx - slPx
                 tpPx         := entryPx + riskPts * rr
@@ -354,10 +373,10 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 strategy.entry(pairId, strategy.long)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
-            else if dirState == -1 and high >= obfvgBot and close < obfvgTop and close < open
+            else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
-                entryPx      := close
+                entryPx      := e3c
                 slPx         := math.max(obfvgTop, c2h)
                 float riskPts = slPx - entryPx
                 tpPx         := entryPx - riskPts * rr
@@ -524,6 +543,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
             e3c := ec
 
         // ENTRY-TF FVG detection (trend-direction pullback zone only, no OB for S2)
+        bool zoneJustSet = false
         if newEntryBar and armed and waitingEntry and not inTrade
             bool  gotZone = false
             float zTop = na
@@ -538,18 +558,21 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 gotZone := true
 
             if gotZone
-                fvgTop := zTop
-                fvgBot := zBot
+                fvgTop      := zTop
+                fvgBot      := zBot
+                zoneJustSet := true
                 box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = "FVG [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
 
-        // ENTRY TRIGGER — pullback into FVG, rejection back WITH the trend.
-        // Gated by (fireIntrabar or barstate.isconfirmed) for the same
-        // no-repaint reason as Strategy 1 — see comment there.
-        if armed and waitingEntry and not inTrade and not na(fvgTop) and canTradeMore and f_inSession(entryTF) and (fireIntrabar or barstate.isconfirmed)
-            if dirState == 1 and low <= fvgTop and close > fvgBot and close > open
+        // ENTRY TRIGGER — pullback into FVG, rejection back WITH the trend,
+        // evaluated on the ENTRY TIMEFRAME's own closed candle (e3), not the
+        // chart's live bars — see the detailed comment in f_sweepPair for
+        // why this matters (chart timeframe coarser than entry timeframe
+        // silently produced zero trades under the old live-bar approach).
+        if newEntryBar and not zoneJustSet and armed and waitingEntry and not inTrade and not na(fvgTop) and canTradeMore and f_inSession(entryTF)
+            if dirState == 1 and e3l <= fvgTop and e3c > fvgBot and e3c > e3o
                 inTrade      := true
                 tradeDir     := 1
-                entryPx      := close
+                entryPx      := e3c
                 slPx         := math.min(fvgBot, x_o)
                 float riskPts = entryPx - slPx
                 tpPx         := entryPx + riskPts * rr
@@ -559,10 +582,10 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 strategy.entry(pairId, strategy.long)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
-            else if dirState == -1 and high >= fvgBot and close < fvgTop and close < open
+            else if dirState == -1 and e3h >= fvgBot and e3c < fvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
-                entryPx      := close
+                entryPx      := e3c
                 slPx         := math.max(fvgTop, x_o)
                 float riskPts = slPx - entryPx
                 tpPx         := entryPx - riskPts * rr
@@ -739,9 +762,12 @@ if showTable
 // - "Closed HTF candle" detection uses the [1]-offset request.security trick,
 //   which is non-repainting but always one HTF bar behind the live-forming
 //   candle — appropriate here since every pattern is defined on CLOSED candles.
-// - Entry mitigation/rejection is evaluated against the chart's own bars, so
-//   run this on a chart timeframe at or below your fastest enabled entry
-//   timeframe for accurate intrabar zone touches.
+// - Entry mitigation/rejection is evaluated against the entry timeframe's
+//   own closed candle (via request.security), not the chart's bars, so
+//   detection works on any chart timeframe. Order FILL timing is still
+//   snapped to the chart's own bar granularity (a Pine strategy-engine
+//   limitation) — for the tightest fills, still run the chart at or below
+//   your fastest enabled entry timeframe.
 // - "Auto (Structure)" trend detection is a simplified higher-high/higher-low
 //   proxy (comparing current close to the close N bars back on that
 //   timeframe), not full swing-pivot structure mapping.
