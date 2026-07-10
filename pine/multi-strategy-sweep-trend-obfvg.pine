@@ -351,7 +351,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.direction.long)
+                strategy.entry(pairId, strategy.long)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
             else if dirState == -1 and high >= obfvgBot and close < obfvgTop and close < open
@@ -364,7 +364,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.direction.short)
+                strategy.entry(pairId, strategy.short)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
 
@@ -556,7 +556,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.direction.long)
+                strategy.entry(pairId, strategy.long)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
             else if dirState == -1 and high >= fvgBot and close < fvgTop and close < open
@@ -569,7 +569,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 beDone       := false
                 waitingEntry := false
                 justEntered  := true
-                strategy.entry(pairId, strategy.direction.short)
+                strategy.entry(pairId, strategy.short)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
 
