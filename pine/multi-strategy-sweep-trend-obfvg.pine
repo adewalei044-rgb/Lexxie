@@ -235,6 +235,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
     bool justEntered = false
     bool sweepJustDetected = false
     bool zoneJustFound     = false
+    bool htfBarSeen        = false
 
     pairEnabled = sweepOn and entryOn
 
@@ -257,6 +258,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
         // STEP 1 — shift and detect the sweep pair (C1 = reference, C2 = sweep)
         if newSweepBar
             lastSweepTime := st
+            htfBarSeen    := true
             c1o := c2o
             c1h := c2h
             c1l := c2l
@@ -431,7 +433,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 obfvgTop := na
                 obfvgBot := na
 
-    [result, justEntered, dirState, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound]
+    [result, justEntered, dirState, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen]
 
 // ============================================================================
 // STRATEGY 2 ENGINE — TREND CONTINUATION + FVG ENTRY (called once per pair)
@@ -479,6 +481,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
     bool justEntered = false
     bool contJustDetected = false
     bool zoneJustFound    = false
+    bool htfBarSeen       = false
 
     pairEnabled = trendOn and entryOn
 
@@ -497,6 +500,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
 
         if newTrendBar
             lastTrendTime := tt
+            htfBarSeen    := true
             p_o := x_o
             p_h := x_h
             p_l := x_l
@@ -642,7 +646,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 fvgTop := na
                 fvgBot := na
 
-    [result, justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound]
+    [result, justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
 
 // ============================================================================
 // GLOBAL COUNTERS (performance table + max trades/day)
@@ -658,6 +662,7 @@ var float peakR       = 0.0
 var float maxDD_R     = 0.0
 var int   sweepsDetected = 0
 var int   zonesFound     = 0
+var int   htfBarsProcessed = 0
 
 newDay = ta.change(time("D")) != 0
 if newDay
@@ -670,14 +675,14 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 // ============================================================================
 // RUN STRATEGY 1 — both pairs
 // ============================================================================
-[s1aRes, s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
-[s1bRes, s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
+[s1aRes, s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone, s1aHtf] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
+[s1bRes, s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone, s1bHtf] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor)
 
 // ============================================================================
 // RUN STRATEGY 2 — both pairs
 // ============================================================================
-[s2aRes, s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
-[s2bRes, s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
+[s2aRes, s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone, s2aHtf] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
+[s2bRes, s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor)
 
 // ============================================================================
 // AGGREGATE RESULTS INTO GLOBAL COUNTERS
@@ -714,8 +719,9 @@ maxDD_R   := math.max(maxDD_R, peakR - equityR)
 tradesThisBar = (s1aEntered ? 1 : 0) + (s1bEntered ? 1 : 0) + (s2aEntered ? 1 : 0) + (s2bEntered ? 1 : 0)
 tradesToday += tradesThisBar
 
-sweepsDetected += (s1aSweep ? 1 : 0) + (s1bSweep ? 1 : 0) + (s2aSweep ? 1 : 0) + (s2bSweep ? 1 : 0)
-zonesFound     += (s1aZone ? 1 : 0)  + (s1bZone ? 1 : 0)  + (s2aZone ? 1 : 0)  + (s2bZone ? 1 : 0)
+sweepsDetected   += (s1aSweep ? 1 : 0) + (s1bSweep ? 1 : 0) + (s2aSweep ? 1 : 0) + (s2bSweep ? 1 : 0)
+zonesFound       += (s1aZone ? 1 : 0)  + (s1bZone ? 1 : 0)  + (s2aZone ? 1 : 0)  + (s2bZone ? 1 : 0)
+htfBarsProcessed += (s1aHtf ? 1 : 0)   + (s1bHtf ? 1 : 0)   + (s2aHtf ? 1 : 0)   + (s2bHtf ? 1 : 0)
 
 // ============================================================================
 // WEBHOOK ALERTS
@@ -752,7 +758,7 @@ alertcondition(maxTradesHitNow, title = "Max Trades Per Day Reached", message = 
 // bar costs a little more but guarantees the table is always populated,
 // live, in replay, or on history.
 // ============================================================================
-var table perfTable = table.new(position.top_right, 2, 9, bgcolor = tableBgColor, border_width = 1)
+var table perfTable = table.new(position.top_right, 2, 10, bgcolor = tableBgColor, border_width = 1)
 
 if showTable
     winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100.0 : 0.0
@@ -760,22 +766,24 @@ if showTable
 
     table.cell(perfTable, 0, 0, "Performance",       text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 1, 0, "",                  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 1, "Sweeps / Continuations", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 1, str.tostring(sweepsDetected), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 2, "Zones Found (OB/FVG)", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 2, str.tostring(zonesFound), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 3, "Win Rate",          text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 3, str.tostring(winRate, "#.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 4, "Wins / Losses",     text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 4, str.tostring(wins) + " / " + str.tostring(losses), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 5, "Daily Win / Loss",  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 5, str.tostring(dailyWin) + " / " + str.tostring(dailyLoss), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 6, "Drawdown (R / %)",  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 6, str.tostring(maxDD_R, "#.##") + "R / " + str.tostring(ddPct, "#.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 7, "Break-Even Exits",  text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 7, str.tostring(beCount), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 8, "Trades Today",      text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 1, 8, str.tostring(tradesToday) + (maxTradesPerDay > 0 ? " / " + str.tostring(maxTradesPerDay) : ""), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 1, "HTF Bars Processed", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 1, str.tostring(htfBarsProcessed), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 2, "Sweeps / Continuations", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 2, str.tostring(sweepsDetected), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 3, "Zones Found (OB/FVG)", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 3, str.tostring(zonesFound), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 4, "Win Rate",          text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 4, str.tostring(winRate, "#.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 5, "Wins / Losses",     text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 5, str.tostring(wins) + " / " + str.tostring(losses), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 6, "Daily Win / Loss",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 6, str.tostring(dailyWin) + " / " + str.tostring(dailyLoss), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 7, "Drawdown (R / %)",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 7, str.tostring(maxDD_R, "#.##") + "R / " + str.tostring(ddPct, "#.##") + "%", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 8, "Break-Even Exits",  text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 8, str.tostring(beCount), text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 9, "Trades Today",      text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 1, 9, str.tostring(tradesToday) + (maxTradesPerDay > 0 ? " / " + str.tostring(maxTradesPerDay) : ""), text_color = tableTxtColor, bgcolor = tableBgColor)
 
 // ============================================================================
 // KNOWN LIMITATIONS / IMPLEMENTATION NOTES
