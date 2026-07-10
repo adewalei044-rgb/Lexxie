@@ -141,7 +141,14 @@ tableTxtColor = input.color(color.white, "Table Text Color", group = gTable)
 // WEBHOOK ALERTS (shared)
 // ---------------------------------------------------------------------------
 enableWebhook   = input.bool(true, "Enable Webhook Alerts", group = gWebhook)
-webhookTemplate = input.text_area("{\"strategy\":\"{{strategy}}\",\"pair\":\"{{pair}}\",\"action\":\"{{action}}\",\"symbol\":\"{{ticker}}\",\"price\":{{price}},\"stop_loss\":{{sl}},\"take_profit\":{{tp}},\"risk_reward\":{{rr}},\"time\":\"{{time}}\"}", "Webhook JSON Template", group = gWebhook)
+// Matches the exact schema your broker's bridge requires, with real
+// stop_loss/take_profit/break_even values from this script's own SL/TP math
+// baked in (see f_webhookMsg) — these can't come from TradingView's native
+// {{strategy.*}} placeholders, since there's no built-in placeholder that
+// exposes a strategy.exit() order's stop/limit price. break_even is "true"
+// only on the specific alert fired the instant this script moves the stop
+// to entry; it's "false" on every entry alert.
+webhookTemplate = input.text_area("{\"type\":\"strategy_order\",\"symbol\":\"{{ticker}}\",\"volume\":0.01,\"position_size\":{{position_size}},\"side\":\"{{action}}\",\"current_price\":{{price}},\"exit_on_opposite\":0,\"stop_loss\":{{sl}},\"take_profit\":{{tp}},\"break_even\":{{be}}}", "Webhook JSON Template", group = gWebhook)
 fireIntrabar    = input.bool(false, "Fire Alerts Intra-bar (else on bar close)", group = gWebhook)
 
 // ---------------------------------------------------------------------------
@@ -206,7 +213,7 @@ f_trendDir(tf, method, emaLen, swingN, manualBias) =>
 // Webhook JSON builder — substitutes our custom placeholders; TradingView's
 // own {{ticker}} / {{time}} placeholders (if left in the template) are filled
 // in by TradingView itself when the alert fires.
-f_webhookMsg(template, stratTag, pairTag, action, price, sl, tp, rr) =>
+f_webhookMsg(template, stratTag, pairTag, action, price, sl, tp, rr, positionSize, isBreakEven) =>
     string msg = template
     msg := str.replace_all(msg, "{{strategy}}", stratTag)
     msg := str.replace_all(msg, "{{pair}}", pairTag)
@@ -215,11 +222,13 @@ f_webhookMsg(template, stratTag, pairTag, action, price, sl, tp, rr) =>
     msg := str.replace_all(msg, "{{sl}}", str.tostring(sl))
     msg := str.replace_all(msg, "{{tp}}", str.tostring(tp))
     msg := str.replace_all(msg, "{{rr}}", str.tostring(rr))
+    msg := str.replace_all(msg, "{{position_size}}", str.tostring(positionSize))
+    msg := str.replace_all(msg, "{{be}}", isBreakEven ? "true" : "false")
     msg
 
 // ============================================================================
 // STRATEGY 1 ENGINE — SWEEP REVERSAL (called once per pair)
-// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen]
+// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen, beTriggered]
 //   sweepJustDetected/zoneJustFound: diagnostic pulses for this bar only, used
 //   to feed the "Sweeps Detected / Zones Found" counters in the performance
 //   table, so it's visible which stage of the funnel (if any) is producing
@@ -285,6 +294,7 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
     bool sweepJustDetected = false
     bool zoneJustFound     = false
     bool htfBarSeen        = false
+    bool beTriggered       = false
 
     pairEnabled = sweepOn and entryOn
 
@@ -477,15 +487,17 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
         if inTrade
             if tradeDir == 1
                 if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
-                    slPx   := entryPx
-                    beDone := true
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 if high >= tpPx or low <= slPx
                     inTrade := false
             else
                 if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
-                    slPx   := entryPx
-                    beDone := true
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 if low <= tpPx or high >= slPx
                     inTrade := false
@@ -508,11 +520,11 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
         curEC := ec
         curET := et
 
-    [justEntered, dirState, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen]
+    [justEntered, dirState, entryPx, slPx, tpPx, sweepJustDetected, zoneJustFound, htfBarSeen, beTriggered]
 
 // ============================================================================
 // STRATEGY 2 ENGINE — TREND CONTINUATION + FVG ENTRY (called once per pair)
-// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
+// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen, beTriggered]
 // ============================================================================
 f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, emaLen, swingN, manualBias, requireFullClose, maxWaitBars, oneSignalPerCont, rr, canTradeMore, bullCol, bearCol, slTpMethodP, slPct, tpPct) =>
     var float p_o = na
@@ -566,6 +578,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
     bool contJustDetected = false
     bool zoneJustFound    = false
     bool htfBarSeen       = false
+    bool beTriggered      = false
 
     pairEnabled = trendOn and entryOn
 
@@ -726,15 +739,17 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
         if inTrade
             if tradeDir == 1
                 if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
-                    slPx   := entryPx
-                    beDone := true
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 if high >= tpPx or low <= slPx
                     inTrade := false
             else
                 if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
-                    slPx   := entryPx
-                    beDone := true
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx)
                 if low <= tpPx or high >= slPx
                     inTrade := false
@@ -757,7 +772,7 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
         curEC := ec
         curET := et
 
-    [justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen]
+    [justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen, beTriggered]
 
 // ============================================================================
 // GLOBAL COUNTERS (performance table + max trades/day)
@@ -828,14 +843,14 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 // ============================================================================
 // RUN STRATEGY 1 — both pairs
 // ============================================================================
-[s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone, s1aHtf] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
-[s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone, s1bHtf] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+[s1aEntered, s1aDir, s1aEntryPx, s1aSL, s1aTP, s1aSweep, s1aZone, s1aHtf, s1aBE] = f_sweepPair("S1 4H/5M", "S1_4H_5M", enableS1 and s1_4h_on, s1_4h_tf, enableS1 and s1_5m_on, s1_5m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+[s1bEntered, s1bDir, s1bEntryPx, s1bSL, s1bTP, s1bSweep, s1bZone, s1bHtf, s1bBE] = f_sweepPair("S1 1H/1M", "S1_1H_1M", enableS1 and s1_1h_on, s1_1h_tf, enableS1 and s1_1m_on, s1_1m_tf, s1_requireFullClose, s1_useOB, s1_useFVG, s1_maxWaitBars, s1_oneSignalPerSweep, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
 
 // ============================================================================
 // RUN STRATEGY 2 — both pairs
 // ============================================================================
-[s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone, s2aHtf] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
-[s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+[s2aEntered, s2aDir, s2aEntryPx, s2aSL, s2aTP, s2aSweep, s2aZone, s2aHtf, s2aBE] = f_contPair("S2 1H/1M", "S2_1H_1M", enableS2 and s2_1h_on, s2_1h_tf, enableS2 and s2_1m_on, s2_1m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+[s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf, s2bBE] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
 
 // ============================================================================
 // TABLE STATS FROM REAL CLOSED TRADES
@@ -898,17 +913,28 @@ htfBarsProcessed += (s1aHtf ? 1 : 0)   + (s1bHtf ? 1 : 0)   + (s2aHtf ? 1 : 0)  
 
 // ============================================================================
 // WEBHOOK ALERTS
+// entryFires: real order-entry alerts, break_even always "false".
+// beFires: a SEPARATE alert fired the instant this script moves a trade's
+// stop to breakeven (slVal is already the new, moved stop by the time this
+// runs), so your bridge can update the SL on the live order — this can't be
+// derived from TradingView's native alert placeholders, since there's no
+// generic "order stop was just moved" event exposed that way.
 // ============================================================================
-f_fireWebhook(entered, stratTag, pairTag, dirVal, entryPxVal, slVal, tpVal) =>
-    if enableWebhook and entered
+f_fireWebhook(fires, stratTag, pairTag, dirVal, entryPxVal, slVal, tpVal, isBE) =>
+    if enableWebhook and fires
         action = dirVal == 1 ? "buy" : "sell"
-        msg = f_webhookMsg(webhookTemplate, stratTag, pairTag, action, entryPxVal, slVal, tpVal, rrMultiple)
+        msg = f_webhookMsg(webhookTemplate, stratTag, pairTag, action, entryPxVal, slVal, tpVal, rrMultiple, strategy.position_size, isBE)
         alert(msg, fireIntrabar ? alert.freq_once_per_bar : alert.freq_once_per_bar_close)
 
-f_fireWebhook(s1aEntered, "S1", "4H/5M", s1aDir, s1aEntryPx, s1aSL, s1aTP)
-f_fireWebhook(s1bEntered, "S1", "1H/1M", s1bDir, s1bEntryPx, s1bSL, s1bTP)
-f_fireWebhook(s2aEntered, "S2", "1H/1M", s2aDir, s2aEntryPx, s2aSL, s2aTP)
-f_fireWebhook(s2bEntered, "S2", "4H/5M", s2bDir, s2bEntryPx, s2bSL, s2bTP)
+f_fireWebhook(s1aEntered, "S1", "4H/5M", s1aDir, s1aEntryPx, s1aSL, s1aTP, false)
+f_fireWebhook(s1bEntered, "S1", "1H/1M", s1bDir, s1bEntryPx, s1bSL, s1bTP, false)
+f_fireWebhook(s2aEntered, "S2", "1H/1M", s2aDir, s2aEntryPx, s2aSL, s2aTP, false)
+f_fireWebhook(s2bEntered, "S2", "4H/5M", s2bDir, s2bEntryPx, s2bSL, s2bTP, false)
+
+f_fireWebhook(s1aBE, "S1", "4H/5M", s1aDir, s1aEntryPx, s1aSL, s1aTP, true)
+f_fireWebhook(s1bBE, "S1", "1H/1M", s1bDir, s1bEntryPx, s1bSL, s1bTP, true)
+f_fireWebhook(s2aBE, "S2", "1H/1M", s2aDir, s2aEntryPx, s2aSL, s2aTP, true)
+f_fireWebhook(s2bBE, "S2", "4H/5M", s2bDir, s2bEntryPx, s2bSL, s2bTP, true)
 
 // ============================================================================
 // GENERIC ALERTCONDITIONS (for TradingView's Alert dialog)
