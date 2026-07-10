@@ -87,7 +87,7 @@ s2_5m_tf = input.timeframe("5",   "5M FVG Entry Confirmation Timeframe", group =
 s2_trendMethod = input.string("Auto (EMA)", "S2: Trend Detection Method", options = ["Auto (EMA)", "Auto (Structure)", "Manual"], group = g2)
 s2_emaLen      = input.int(50, "S2: EMA Length (Auto EMA method)", group = g2)
 s2_swingN      = input.int(3,  "S2: Swing Lookback N (Auto Structure method)", group = g2)
-s2_manualBias  = input.string("Bullish", "S2: Manual Trend Bias (Manual method)", options = ["Bullish", "Bearish"], group = g2)
+s2_manualBias  = input.string("Bullish", "S2: Manual Trend Bias (Manual method)", options = ["Bullish", "Bearish", "Both"], group = g2)
 
 s2_requireFullClose = input.bool(true, "S2: Require Full-Body Close Beyond Previous Candle", group = g2)
 s2_maxWaitBars       = input.int(200, "S2: Max Entry-TF Bars to Wait After Arming", minval = 1, group = g2)
@@ -166,11 +166,14 @@ f_inSession(tf) =>
 // continuous directional filter, not a discrete candle pattern, so it's fine
 // for it to track the live-forming HTF candle rather than needing a frozen
 // closed-candle boundary the way sweep/continuation detection does.
+// dirOut: 1 = bullish trend, -1 = bearish trend, 2 = "Both" (Manual mode
+// only) — removes the directional filter entirely so continuation candles
+// are accepted in either direction, purely on their own color/close.
 f_trendDir(tf, method, emaLen, swingN, manualBias) =>
     float closeVal = request.security(syminfo.tickerid, tf, close, lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
     int dirOut = 0
     if method == "Manual"
-        dirOut := manualBias == "Bullish" ? 1 : -1
+        dirOut := manualBias == "Bullish" ? 1 : manualBias == "Bearish" ? -1 : 2
     else if method == "Auto (EMA)"
         float emaVal = request.security(syminfo.tickerid, tf, ta.ema(close, emaLen), lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
         dirOut := closeVal > emaVal ? 1 : closeVal < emaVal ? -1 : 0
@@ -581,8 +584,10 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
 
                 if not na(p_c)
                     bool xBull    = x_c > x_o
-                    bool contBull = trendDirNow == 1 and xBull and (requireFullClose ? x_c > p_h : x_h > p_h)
-                    bool contBear = trendDirNow == -1 and not xBull and (requireFullClose ? x_c < p_l : x_l < p_l)
+                    // trendDirNow == 2 means "Both" (Manual mode, no directional
+                    // filter) — accept continuation candles either way.
+                    bool contBull = (trendDirNow == 1 or trendDirNow == 2) and xBull and (requireFullClose ? x_c > p_h : x_h > p_h)
+                    bool contBear = (trendDirNow == -1 or trendDirNow == 2) and not xBull and (requireFullClose ? x_c < p_l : x_l < p_l)
 
                     if contBull
                         dirState     := 1
