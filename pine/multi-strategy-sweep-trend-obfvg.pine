@@ -166,6 +166,7 @@ webhookTemplate = input.text_area("{\"type\":\"strategy_order\",\"symbol\":\"{{t
 // ---------------------------------------------------------------------------
 bullColor = input.color(color.new(color.lime, 0), "Bullish Zone / Label Color", group = gVisual)
 bearColor = input.color(color.new(color.red, 0),  "Bearish Zone / Label Color", group = gVisual)
+showSlTpLabels = input.bool(true, "Show SL/TP Labels on Entry", group = gVisual)
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -464,6 +465,9 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 strategy.entry(pairId, strategy.long, alert_message = webhookMsgLong)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
             else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
@@ -482,6 +486,9 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 strategy.entry(pairId, strategy.short, alert_message = webhookMsgShort)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         // MANAGE OPEN TRADE — break-even, target, stop. This just moves the
         // REAL pending strategy.exit() order when break-even triggers
@@ -725,6 +732,9 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 strategy.entry(pairId, strategy.long, alert_message = webhookMsgLong)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
             else if dirState == -1 and e3h >= fvgBot and e3c < fvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
@@ -743,6 +753,9 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 strategy.entry(pairId, strategy.short, alert_message = webhookMsgShort)
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         // Mirrors the real strategy.exit() order placed at entry above; see
         // the equivalent comment in f_sweepPair for why break-even re-issues
