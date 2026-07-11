@@ -17,7 +17,7 @@
 // dollar amount there — that's the built-in, always-available way to
 // adjust this. Default here is $1,000, i.e. 10% of the $10,000
 // initial_capital set below.
-strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay=true, initial_capital=10000, default_qty_type=strategy.cash, default_qty_value=1000, pyramiding=4, commission_type=strategy.commission.percent, commission_value=0.0, slippage=0, calc_on_every_tick=false, process_orders_on_close=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
+strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay=true, initial_capital=10000, default_qty_type=strategy.cash, default_qty_value=1000, pyramiding=6, commission_type=strategy.commission.percent, commission_value=0.0, slippage=0, calc_on_every_tick=false, process_orders_on_close=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
 
 // ============================================================================
 // HOW TO USE
@@ -58,6 +58,8 @@ strategy("Multi-Strategy: Sweep Reversal & Trend Continuation (OB/FVG)", overlay
 gStrat   = "Strategies"
 g1       = "Strategy 1: Sweep Reversal"
 g2       = "Strategy 2: Trend Continuation"
+g3       = "Strategy 3: RSI Divergence"
+g4       = "Strategy 4: Bollinger Bands"
 gRisk    = "Risk / Trade Management"
 gSession = "Session Filter"
 gTable   = "Performance Table"
@@ -69,6 +71,8 @@ gVisual  = "Visuals"
 // ---------------------------------------------------------------------------
 enableS1 = input.bool(true,  "Enable Strategy 1: Sweep Reversal",     group = gStrat)
 enableS2 = input.bool(false, "Enable Strategy 2: Trend Continuation", group = gStrat)
+enableS3 = input.bool(false, "Enable Strategy 3: RSI Divergence",     group = gStrat)
+enableS4 = input.bool(false, "Enable Strategy 4: Bollinger Bands",    group = gStrat)
 
 // ---------------------------------------------------------------------------
 // STRATEGY 1 INPUTS
@@ -110,6 +114,45 @@ s2_manualBias  = input.string("Bullish", "S2: Manual Trend Bias (Manual method)"
 s2_requireFullClose = input.bool(true, "S2: Require Full-Body Close Beyond Previous Candle", group = g2)
 s2_maxWaitBars       = input.int(200, "S2: Max Entry-TF Bars to Wait After Arming", minval = 1, group = g2)
 s2_oneSignalPerCont  = input.bool(true, "S2: One Signal Per Continuation", group = g2)
+
+// ---------------------------------------------------------------------------
+// STRATEGY 3 INPUTS — Regular (classic) RSI divergence: bullish divergence is
+// price printing a lower low while RSI prints a higher low; bearish is price
+// higher high while RSI prints a lower high. Pivots need s3_pivotRight bars
+// to CLOSE before a divergence can confirm, so confirmation always lags the
+// actual swing by that many bars — standard for any pivot-based divergence
+// tool, and what keeps this non-repainting.
+// ---------------------------------------------------------------------------
+s3_tfMode      = input.string("Single Timeframe", "S3: Timeframe Mode", options = ["Single Timeframe", "Two-Timeframe Pair"], group = g3)
+s3_divTF       = input.timeframe("15", "S3: Divergence Timeframe (Single mode) / HTF (Pair mode)", group = g3)
+s3_entryTF     = input.timeframe("1",  "S3: Entry Confirmation Timeframe (Pair mode only)", group = g3)
+s3_rsiLen      = input.int(14, "S3: RSI Length", minval = 2, group = g3)
+s3_pivotLeft   = input.int(5, "S3: Pivot Lookback Left", minval = 1, group = g3)
+s3_pivotRight  = input.int(5, "S3: Pivot Lookback Right", minval = 1, group = g3)
+s3_maxDivBars  = input.int(60, "S3: Max Bars Between Pivots", minval = 5, group = g3)
+s3_entryMode   = input.string("Divergence Alone", "S3: Entry Trigger", options = ["Divergence Alone", "Divergence + Zone Pullback"], group = g3)
+s3_useOB       = input.bool(true, "S3: Use Order Block Detection (Zone Pullback mode)", group = g3)
+s3_useFVG      = input.bool(true, "S3: Use Fair Value Gap Detection (Zone Pullback mode)", group = g3)
+s3_maxWaitBars = input.int(200, "S3: Max Entry-TF Bars to Wait After Arming (Zone Pullback mode)", minval = 1, group = g3)
+s3_oneSignalPerDiv = input.bool(true, "S3: One Signal Per Divergence", group = g3)
+
+// ---------------------------------------------------------------------------
+// STRATEGY 4 INPUTS — Bollinger Bands. "Mean Reversion" treats a wick beyond
+// a band that closes back inside it as a fade/reversal signal (stop anchored
+// to that wick). "Breakout" treats a candle closing beyond a band as
+// continuation (stop anchored to the basis/middle band).
+// ---------------------------------------------------------------------------
+s4_tfMode      = input.string("Single Timeframe", "S4: Timeframe Mode", options = ["Single Timeframe", "Two-Timeframe Pair"], group = g4)
+s4_bbTF        = input.timeframe("15", "S4: Bollinger Timeframe (Single mode) / HTF (Pair mode)", group = g4)
+s4_entryTF     = input.timeframe("1",  "S4: Entry Confirmation Timeframe (Pair mode only)", group = g4)
+s4_bbLen       = input.int(20, "S4: BB Length", minval = 2, group = g4)
+s4_bbMult      = input.float(2.0, "S4: BB StdDev Multiplier", minval = 0.1, group = g4)
+s4_bbMode      = input.string("Mean Reversion", "S4: Signal Mode", options = ["Mean Reversion", "Breakout"], group = g4)
+s4_entryMode   = input.string("Signal Alone", "S4: Entry Trigger", options = ["Signal Alone", "Signal + Zone Pullback"], group = g4)
+s4_useOB       = input.bool(true, "S4: Use Order Block Detection (Zone Pullback mode)", group = g4)
+s4_useFVG      = input.bool(true, "S4: Use Fair Value Gap Detection (Zone Pullback mode)", group = g4)
+s4_maxWaitBars = input.int(200, "S4: Max Entry-TF Bars to Wait After Arming (Zone Pullback mode)", minval = 1, group = g4)
+s4_oneSignalPerBB = input.bool(true, "S4: One Signal Per Touch", group = g4)
 
 // ---------------------------------------------------------------------------
 // RISK / TRADE MANAGEMENT (shared)
@@ -220,6 +263,62 @@ f_trendDir(tf, method, emaLen, swingN, manualBias) =>
         float pastClose = request.security(syminfo.tickerid, tf, close[swingN], lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
         dirOut := closeVal > pastClose ? 1 : closeVal < pastClose ? -1 : 0
     dirOut
+
+// Regular RSI divergence pivot tracker for Strategy 3 — called INSIDE
+// request.security() so its own var state (the previous confirmed pivot's
+// price/RSI/bar) is tracked at the target timeframe's own bar resolution,
+// not the chart's. A pivot only confirms pRight bars after the actual swing
+// (ta.pivotlow/pivothigh need that many bars closed on both sides), so
+// bullDiv/bearDiv pulse true on exactly one bar per confirmed divergence —
+// inherently non-repainting, at the cost of that pRight-bar confirmation lag.
+f_rsiDivCalc(len, pLeft, pRight, maxBars) =>
+    float rsiSrc = ta.rsi(close, len)
+    var float prevPLPrice = na
+    var float prevPLRsi   = na
+    var int   prevPLBar   = na
+    var float prevPHPrice = na
+    var float prevPHRsi   = na
+    var int   prevPHBar   = na
+
+    float plRsi = ta.pivotlow(rsiSrc, pLeft, pRight)
+    float phRsi = ta.pivothigh(rsiSrc, pLeft, pRight)
+
+    bool  bullDiv     = false
+    bool  bearDiv     = false
+    float pivotBullPx = na
+    float pivotBearPx = na
+
+    if not na(plRsi)
+        float curPrice = low[pRight]
+        int   curBar   = bar_index - pRight
+        if not na(prevPLPrice) and (curBar - prevPLBar) <= maxBars and curPrice < prevPLPrice and plRsi > prevPLRsi
+            bullDiv     := true
+            pivotBullPx := curPrice
+        prevPLPrice := curPrice
+        prevPLRsi   := plRsi
+        prevPLBar   := curBar
+
+    if not na(phRsi)
+        float curPriceH = high[pRight]
+        int   curBarH   = bar_index - pRight
+        if not na(prevPHPrice) and (curBarH - prevPHBar) <= maxBars and curPriceH > prevPHPrice and phRsi < prevPHRsi
+            bearDiv     := true
+            pivotBearPx := curPriceH
+        prevPHPrice := curPriceH
+        prevPHRsi   := phRsi
+        prevPHBar   := curBarH
+
+    [bullDiv, bearDiv, pivotBullPx, pivotBearPx]
+
+// Bollinger Band basis/upper/lower for Strategy 4 — called inside
+// request.security() the same way f_htfNow is, so the wrapper can snapshot
+// the just-closed band values with the same closedXX pattern used elsewhere.
+f_bbCalc(len, mult) =>
+    float basis = ta.sma(close, len)
+    float dev   = mult * ta.stdev(close, len)
+    float upper = basis + dev
+    float lower = basis - dev
+    [basis, upper, lower]
 
 // Webhook JSON builder — substitutes only OUR custom {{sl}}/{{tp}}/{{be}}
 // placeholders (the values only this script knows). Any TradingView-native
@@ -803,6 +902,577 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
     [justEntered, dirState, entryPx, slPx, tpPx, contJustDetected, zoneJustFound, htfBarSeen, beTriggered]
 
 // ============================================================================
+// STRATEGY 3 ENGINE — REGULAR RSI DIVERGENCE (single pair)
+// tfMode picks whether entryTFin is actually used (Two-Timeframe Pair) or
+// ignored in favor of divTF itself (Single Timeframe). entryMode picks
+// whether a confirmed divergence enters immediately at the divergence
+// timeframe's own close ("Divergence Alone") or only arms the setup and
+// waits for an OB/FVG pullback + rejection on the entry timeframe, exactly
+// like f_sweepPair's zone logic ("Divergence + Zone Pullback").
+// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, divJustDetected, zoneJustFound, htfBarSeen, beTriggered]
+// ============================================================================
+f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, pRight, maxDivBars, entryMode, useOB, useFVG, maxWaitBars, oneSignalPerDiv, rr, canTradeMore, bullCol, bearCol, slTpMethodP, slPct, tpPct) =>
+    entryTF         = tfMode == "Two-Timeframe Pair" ? entryTFin : divTF
+    useZonePullback = entryMode == "Divergence + Zone Pullback"
+
+    var bool  armed        = false
+    var bool  waitingEntry = false
+    var int   dirState     = 0
+    var int   barsWaited   = 0
+    var float divPivotPx   = na
+
+    var float e1o = na
+    var float e1h = na
+    var float e1l = na
+    var float e2o = na
+    var float e2h = na
+    var float e2l = na
+    var float e2c = na
+    var float e3o = na
+    var float e3h = na
+    var float e3l = na
+    var float e3c = na
+
+    var float obfvgTop = na
+    var float obfvgBot = na
+
+    var bool  inTrade  = false
+    var int   tradeDir = 0
+    var float entryPx  = na
+    var float slPx     = na
+    var float tpPx     = na
+    var bool  beDone   = false
+
+    var float curDO = na
+    var float curDH = na
+    var float curDL = na
+    var float curDC = na
+    var int   curDT = na
+    var bool  curDivBull   = false
+    var bool  curDivBear   = false
+    var float curPivotBull = na
+    var float curPivotBear = na
+
+    var float curEO = na
+    var float curEH = na
+    var float curEL = na
+    var float curEC = na
+    var int   curET = na
+
+    bool justEntered     = false
+    bool divJustDetected = false
+    bool zoneJustFound   = false
+    bool htfBarSeen      = false
+    bool beTriggered     = false
+
+    if pairOn
+        [do_, dh, dl, dc, dt] = f_htfNow(divTF)
+        [bullDivRaw, bearDivRaw, pivotBullRaw, pivotBearRaw] = request.security(syminfo.tickerid, divTF, f_rsiDivCalc(rsiLen, pLeft, pRight, maxDivBars), lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+        [eo, eh, el, ec, et] = f_htfNow(entryTF)
+
+        newDivBar   = not na(curDT) and dt != curDT
+        newEntryBar = not na(curET) and et != curET
+
+        float closedDC        = curDC
+        bool  closedBullDiv   = curDivBull
+        bool  closedBearDiv   = curDivBear
+        float closedPivotBull = curPivotBull
+        float closedPivotBear = curPivotBear
+
+        float closedEO = curEO
+        float closedEH = curEH
+        float closedEL = curEL
+        float closedEC = curEC
+
+        // Divergence confirmation on the divergence timeframe
+        if newDivBar
+            htfBarSeen := true
+            if not armed and not inTrade and canTradeMore
+                if closedBullDiv
+                    dirState        := 1
+                    divPivotPx      := closedPivotBull
+                    divJustDetected := true
+                    label.new(bar_index, low, "Bull Div [" + pairTag + "]", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.small)
+                    if useZonePullback
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                    else
+                        entryPx := closedDC
+                        if slTpMethodP == "Fixed %"
+                            slPx := entryPx * (1 - slPct / 100)
+                            tpPx := entryPx * (1 + tpPct / 100)
+                        else
+                            slPx := divPivotPx
+                            float riskPts = entryPx - slPx
+                            tpPx := entryPx + riskPts * rr
+                        inTrade     := true
+                        tradeDir    := 1
+                        beDone      := false
+                        justEntered := true
+                        string webhookMsgLong = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                        strategy.entry(pairId, strategy.long, alert_message = webhookMsgLong)
+                        strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
+                        label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+                        if showSlTpLabels
+                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                else if closedBearDiv
+                    dirState        := -1
+                    divPivotPx      := closedPivotBear
+                    divJustDetected := true
+                    label.new(bar_index, high, "Bear Div [" + pairTag + "]", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.small)
+                    if useZonePullback
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                    else
+                        entryPx := closedDC
+                        if slTpMethodP == "Fixed %"
+                            slPx := entryPx * (1 + slPct / 100)
+                            tpPx := entryPx * (1 - tpPct / 100)
+                        else
+                            slPx := divPivotPx
+                            float riskPts = slPx - entryPx
+                            tpPx := entryPx - riskPts * rr
+                        inTrade     := true
+                        tradeDir    := -1
+                        beDone      := false
+                        justEntered := true
+                        string webhookMsgShort = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                        strategy.entry(pairId, strategy.short, alert_message = webhookMsgShort)
+                        strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
+                        label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+                        if showSlTpLabels
+                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+
+        if waitingEntry and newEntryBar
+            barsWaited += 1
+            if barsWaited > maxWaitBars
+                armed        := false
+                waitingEntry := false
+
+        if newEntryBar
+            e1o := e2o
+            e1h := e2h
+            e1l := e2l
+            e2o := e3o
+            e2h := e3h
+            e2l := e3l
+            e2c := e3c
+            e3o := closedEO
+            e3h := closedEH
+            e3l := closedEL
+            e3c := closedEC
+
+        bool zoneJustSet = false
+        if useZonePullback and newEntryBar and armed and waitingEntry and not inTrade
+            bool  gotZone = false
+            float zTop = na
+            float zBot = na
+
+            if dirState == 1
+                if useFVG and not na(e1h) and e3l > e1h
+                    zTop := e3l
+                    zBot := e1h
+                    gotZone := true
+                else if useOB and not na(e2o) and e2c < e2o and e3c > e3o and e3c > e2h
+                    zTop := e2h
+                    zBot := e2l
+                    gotZone := true
+            else if dirState == -1
+                if useFVG and not na(e1l) and e3h < e1l
+                    zTop := e1l
+                    zBot := e3h
+                    gotZone := true
+                else if useOB and not na(e2o) and e2c > e2o and e3c < e3o and e3c < e2l
+                    zTop := e2h
+                    zBot := e2l
+                    gotZone := true
+
+            if gotZone
+                obfvgTop      := zTop
+                obfvgBot      := zBot
+                zoneJustSet   := true
+                zoneJustFound := true
+                box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = (useFVG ? "FVG" : "OB") + " [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
+
+        if useZonePullback and newEntryBar and not zoneJustSet and armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF)
+            if dirState == 1 and e3l <= obfvgTop and e3c > obfvgBot and e3c > e3o
+                inTrade      := true
+                tradeDir     := 1
+                entryPx      := e3c
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 - slPct / 100)
+                    tpPx := entryPx * (1 + tpPct / 100)
+                else
+                    slPx := math.min(obfvgBot, divPivotPx)
+                    float riskPts = entryPx - slPx
+                    tpPx := entryPx + riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                string webhookMsgLongZ = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.long, alert_message = webhookMsgLongZ)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLongZ)
+                label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+            else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
+                inTrade      := true
+                tradeDir     := -1
+                entryPx      := e3c
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 + slPct / 100)
+                    tpPx := entryPx * (1 - tpPct / 100)
+                else
+                    slPx := math.max(obfvgTop, divPivotPx)
+                    float riskPts = slPx - entryPx
+                    tpPx := entryPx - riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                string webhookMsgShortZ = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.short, alert_message = webhookMsgShortZ)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShortZ)
+                label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+
+        if inTrade
+            if tradeDir == 1
+                if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
+                if high >= tpPx or low <= slPx
+                    inTrade := false
+            else
+                if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
+                if low <= tpPx or high >= slPx
+                    inTrade := false
+
+            if not inTrade and oneSignalPerDiv
+                armed    := false
+                obfvgTop := na
+                obfvgBot := na
+
+        curDO := do_
+        curDH := dh
+        curDL := dl
+        curDC := dc
+        curDT := dt
+        curDivBull := bullDivRaw
+        curDivBear := bearDivRaw
+        if not na(pivotBullRaw)
+            curPivotBull := pivotBullRaw
+        if not na(pivotBearRaw)
+            curPivotBear := pivotBearRaw
+        curEO := eo
+        curEH := eh
+        curEL := el
+        curEC := ec
+        curET := et
+
+    [justEntered, dirState, entryPx, slPx, tpPx, divJustDetected, zoneJustFound, htfBarSeen, beTriggered]
+
+// ============================================================================
+// STRATEGY 4 ENGINE — BOLLINGER BANDS (single pair)
+// bbMode "Mean Reversion" fades a wick beyond a band that closes back inside
+// it (stop anchored to that wick's extreme). "Breakout" trades a candle
+// closing beyond a band as continuation (stop anchored to the basis/middle
+// band). tfMode/entryMode mirror Strategy 3's — Single vs Two-Timeframe Pair,
+// and Signal Alone vs Signal + Zone Pullback.
+// Returns: [justEntered, tradeDir, entryPx, slPx, tpPx, bbJustDetected, zoneJustFound, htfBarSeen, beTriggered]
+// ============================================================================
+f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode, entryMode, useOB, useFVG, maxWaitBars, oneSignalPerBB, rr, canTradeMore, bullCol, bearCol, slTpMethodP, slPct, tpPct) =>
+    entryTF         = tfMode == "Two-Timeframe Pair" ? entryTFin : bbTF
+    useZonePullback = entryMode == "Signal + Zone Pullback"
+    isBreakout      = bbMode == "Breakout"
+
+    var bool  armed        = false
+    var bool  waitingEntry = false
+    var int   dirState     = 0
+    var int   barsWaited   = 0
+    var float bbAnchorPx   = na
+
+    var float e1o = na
+    var float e1h = na
+    var float e1l = na
+    var float e2o = na
+    var float e2h = na
+    var float e2l = na
+    var float e2c = na
+    var float e3o = na
+    var float e3h = na
+    var float e3l = na
+    var float e3c = na
+
+    var float obfvgTop = na
+    var float obfvgBot = na
+
+    var bool  inTrade  = false
+    var int   tradeDir = 0
+    var float entryPx  = na
+    var float slPx     = na
+    var float tpPx     = na
+    var bool  beDone   = false
+
+    var float curDO = na
+    var float curDH = na
+    var float curDL = na
+    var float curDC = na
+    var int   curDT = na
+    var float curBasis = na
+    var float curUpper = na
+    var float curLower = na
+
+    var float curEO = na
+    var float curEH = na
+    var float curEL = na
+    var float curEC = na
+    var int   curET = na
+
+    bool justEntered   = false
+    bool bbJustDetected = false
+    bool zoneJustFound  = false
+    bool htfBarSeen     = false
+    bool beTriggered    = false
+
+    if pairOn
+        [do_, dh, dl, dc, dt] = f_htfNow(bbTF)
+        [basisRaw, upperRaw, lowerRaw] = request.security(syminfo.tickerid, bbTF, f_bbCalc(bbLen, bbMult), lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+        [eo, eh, el, ec, et] = f_htfNow(entryTF)
+
+        newBBBar    = not na(curDT) and dt != curDT
+        newEntryBar = not na(curET) and et != curET
+
+        float closedDH    = curDH
+        float closedDL    = curDL
+        float closedDC    = curDC
+        float closedBasis = curBasis
+        float closedUpper = curUpper
+        float closedLower = curLower
+
+        float closedEO = curEO
+        float closedEH = curEH
+        float closedEL = curEL
+        float closedEC = curEC
+
+        if newBBBar
+            htfBarSeen := true
+            if not armed and not inTrade and canTradeMore and not na(closedUpper)
+                bool  bullSig    = isBreakout ? closedDC > closedUpper : (closedDL < closedLower and closedDC > closedLower)
+                bool  bearSig    = isBreakout ? closedDC < closedLower : (closedDH > closedUpper and closedDC < closedUpper)
+                float anchorBull = isBreakout ? closedBasis : closedDL
+                float anchorBear = isBreakout ? closedBasis : closedDH
+
+                if bullSig
+                    dirState       := 1
+                    bbAnchorPx     := anchorBull
+                    bbJustDetected := true
+                    label.new(bar_index, low, (isBreakout ? "BB Breakout Bull [" : "BB Bull [") + pairTag + "]", style = label.style_label_up, color = bullCol, textcolor = color.white, size = size.small)
+                    if useZonePullback
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                    else
+                        entryPx := closedDC
+                        if slTpMethodP == "Fixed %"
+                            slPx := entryPx * (1 - slPct / 100)
+                            tpPx := entryPx * (1 + tpPct / 100)
+                        else
+                            slPx := bbAnchorPx
+                            float riskPts = entryPx - slPx
+                            tpPx := entryPx + riskPts * rr
+                        inTrade     := true
+                        tradeDir    := 1
+                        beDone      := false
+                        justEntered := true
+                        string webhookMsgLong = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                        strategy.entry(pairId, strategy.long, alert_message = webhookMsgLong)
+                        strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
+                        label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+                        if showSlTpLabels
+                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                else if bearSig
+                    dirState       := -1
+                    bbAnchorPx     := anchorBear
+                    bbJustDetected := true
+                    label.new(bar_index, high, (isBreakout ? "BB Breakout Bear [" : "BB Bear [") + pairTag + "]", style = label.style_label_down, color = bearCol, textcolor = color.white, size = size.small)
+                    if useZonePullback
+                        armed        := true
+                        waitingEntry := true
+                        barsWaited   := 0
+                    else
+                        entryPx := closedDC
+                        if slTpMethodP == "Fixed %"
+                            slPx := entryPx * (1 + slPct / 100)
+                            tpPx := entryPx * (1 - tpPct / 100)
+                        else
+                            slPx := bbAnchorPx
+                            float riskPts = slPx - entryPx
+                            tpPx := entryPx - riskPts * rr
+                        inTrade     := true
+                        tradeDir    := -1
+                        beDone      := false
+                        justEntered := true
+                        string webhookMsgShort = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                        strategy.entry(pairId, strategy.short, alert_message = webhookMsgShort)
+                        strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
+                        label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+                        if showSlTpLabels
+                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+
+        if waitingEntry and newEntryBar
+            barsWaited += 1
+            if barsWaited > maxWaitBars
+                armed        := false
+                waitingEntry := false
+
+        if newEntryBar
+            e1o := e2o
+            e1h := e2h
+            e1l := e2l
+            e2o := e3o
+            e2h := e3h
+            e2l := e3l
+            e2c := e3c
+            e3o := closedEO
+            e3h := closedEH
+            e3l := closedEL
+            e3c := closedEC
+
+        bool zoneJustSet = false
+        if useZonePullback and newEntryBar and armed and waitingEntry and not inTrade
+            bool  gotZone = false
+            float zTop = na
+            float zBot = na
+
+            if dirState == 1
+                if useFVG and not na(e1h) and e3l > e1h
+                    zTop := e3l
+                    zBot := e1h
+                    gotZone := true
+                else if useOB and not na(e2o) and e2c < e2o and e3c > e3o and e3c > e2h
+                    zTop := e2h
+                    zBot := e2l
+                    gotZone := true
+            else if dirState == -1
+                if useFVG and not na(e1l) and e3h < e1l
+                    zTop := e1l
+                    zBot := e3h
+                    gotZone := true
+                else if useOB and not na(e2o) and e2c > e2o and e3c < e3o and e3c < e2l
+                    zTop := e2h
+                    zBot := e2l
+                    gotZone := true
+
+            if gotZone
+                obfvgTop      := zTop
+                obfvgBot      := zBot
+                zoneJustSet   := true
+                zoneJustFound := true
+                box.new(bar_index - 2, zTop, bar_index + 20, zBot, border_color = dirState == 1 ? bullCol : bearCol, bgcolor = color.new(dirState == 1 ? bullCol : bearCol, 80), text = (useFVG ? "FVG" : "OB") + " [" + pairTag + "]", text_color = dirState == 1 ? bullCol : bearCol, text_size = size.small)
+
+        if useZonePullback and newEntryBar and not zoneJustSet and armed and waitingEntry and not inTrade and not na(obfvgTop) and canTradeMore and f_inSession(entryTF)
+            if dirState == 1 and e3l <= obfvgTop and e3c > obfvgBot and e3c > e3o
+                inTrade      := true
+                tradeDir     := 1
+                entryPx      := e3c
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 - slPct / 100)
+                    tpPx := entryPx * (1 + tpPct / 100)
+                else
+                    slPx := math.min(obfvgBot, bbAnchorPx)
+                    float riskPts = entryPx - slPx
+                    tpPx := entryPx + riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                string webhookMsgLongZ = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.long, alert_message = webhookMsgLongZ)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLongZ)
+                label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+            else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
+                inTrade      := true
+                tradeDir     := -1
+                entryPx      := e3c
+                if slTpMethodP == "Fixed %"
+                    slPx := entryPx * (1 + slPct / 100)
+                    tpPx := entryPx * (1 - tpPct / 100)
+                else
+                    slPx := math.max(obfvgTop, bbAnchorPx)
+                    float riskPts = slPx - entryPx
+                    tpPx := entryPx - riskPts * rr
+                beDone       := false
+                waitingEntry := false
+                justEntered  := true
+                string webhookMsgShortZ = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, false) : ""
+                strategy.entry(pairId, strategy.short, alert_message = webhookMsgShortZ)
+                strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShortZ)
+                label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+                if showSlTpLabels
+                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+
+        if inTrade
+            if tradeDir == 1
+                if enableBE and not beDone and high >= entryPx + (entryPx - slPx) * beTriggerR
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
+                if high >= tpPx or low <= slPx
+                    inTrade := false
+            else
+                if enableBE and not beDone and low <= entryPx - (slPx - entryPx) * beTriggerR
+                    slPx        := entryPx
+                    beDone      := true
+                    beTriggered := true
+                    string webhookMsgBE = enableWebhook ? f_webhookMsg(webhookTemplate, slPx, tpPx, true) : ""
+                    strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
+                if low <= tpPx or high >= slPx
+                    inTrade := false
+
+            if not inTrade and oneSignalPerBB
+                armed    := false
+                obfvgTop := na
+                obfvgBot := na
+
+        curDO := do_
+        curDH := dh
+        curDL := dl
+        curDC := dc
+        curDT := dt
+        curBasis := basisRaw
+        curUpper := upperRaw
+        curLower := lowerRaw
+        curEO := eo
+        curEH := eh
+        curEL := el
+        curEC := ec
+        curET := et
+
+    [justEntered, dirState, entryPx, slPx, tpPx, bbJustDetected, zoneJustFound, htfBarSeen, beTriggered]
+
+// ============================================================================
 // GLOBAL COUNTERS (performance table + max trades/day)
 // ============================================================================
 var int   dailyWin    = 0
@@ -881,6 +1551,16 @@ canTradeMore = maxTradesPerDay <= 0 or tradesToday < maxTradesPerDay
 [s2bEntered, s2bDir, s2bEntryPx, s2bSL, s2bTP, s2bSweep, s2bZone, s2bHtf, s2bBE] = f_contPair("S2 4H/5M", "S2_4H_5M", enableS2 and s2_4h_on, s2_4h_tf, enableS2 and s2_5m_on, s2_5m_tf, s2_trendMethod, s2_emaLen, s2_swingN, s2_manualBias, s2_requireFullClose, s2_maxWaitBars, s2_oneSignalPerCont, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
 
 // ============================================================================
+// RUN STRATEGY 3 — RSI Divergence (single pair)
+// ============================================================================
+[s3Entered, s3Dir, s3EntryPx, s3SL, s3TP, s3Div, s3Zone, s3Htf, s3BE] = f_rsiDivPair("S3 Div", "S3_DIV", enableS3, s3_divTF, s3_tfMode, s3_entryTF, s3_rsiLen, s3_pivotLeft, s3_pivotRight, s3_maxDivBars, s3_entryMode, s3_useOB, s3_useFVG, s3_maxWaitBars, s3_oneSignalPerDiv, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+
+// ============================================================================
+// RUN STRATEGY 4 — Bollinger Bands (single pair)
+// ============================================================================
+[s4Entered, s4Dir, s4EntryPx, s4SL, s4TP, s4BB, s4Zone, s4Htf, s4BE] = f_bbPair("S4 BB", "S4_BB", enableS4, s4_bbTF, s4_tfMode, s4_entryTF, s4_bbLen, s4_bbMult, s4_bbMode, s4_entryMode, s4_useOB, s4_useFVG, s4_maxWaitBars, s4_oneSignalPerBB, rrMultiple, canTradeMore, bullColor, bearColor, slTpMethod, slPercent, tpPercent)
+
+// ============================================================================
 // TABLE STATS FROM REAL CLOSED TRADES
 // Win/loss/break-even and the daily/weekly/monthly win-loss counters are
 // derived directly from strategy.closedtrades — TradingView's actual trade
@@ -939,12 +1619,12 @@ if strategy.closedtrades > lastClosedCount
 
     lastClosedCount := strategy.closedtrades
 
-tradesThisBar = (s1aEntered ? 1 : 0) + (s1bEntered ? 1 : 0) + (s2aEntered ? 1 : 0) + (s2bEntered ? 1 : 0)
+tradesThisBar = (s1aEntered ? 1 : 0) + (s1bEntered ? 1 : 0) + (s2aEntered ? 1 : 0) + (s2bEntered ? 1 : 0) + (s3Entered ? 1 : 0) + (s4Entered ? 1 : 0)
 tradesToday += tradesThisBar
 
-sweepsDetected   += (s1aSweep ? 1 : 0) + (s1bSweep ? 1 : 0) + (s2aSweep ? 1 : 0) + (s2bSweep ? 1 : 0)
-zonesFound       += (s1aZone ? 1 : 0)  + (s1bZone ? 1 : 0)  + (s2aZone ? 1 : 0)  + (s2bZone ? 1 : 0)
-htfBarsProcessed += (s1aHtf ? 1 : 0)   + (s1bHtf ? 1 : 0)   + (s2aHtf ? 1 : 0)   + (s2bHtf ? 1 : 0)
+sweepsDetected   += (s1aSweep ? 1 : 0) + (s1bSweep ? 1 : 0) + (s2aSweep ? 1 : 0) + (s2bSweep ? 1 : 0) + (s3Div ? 1 : 0) + (s4BB ? 1 : 0)
+zonesFound       += (s1aZone ? 1 : 0)  + (s1bZone ? 1 : 0)  + (s2aZone ? 1 : 0)  + (s2bZone ? 1 : 0)  + (s3Zone ? 1 : 0) + (s4Zone ? 1 : 0)
+htfBarsProcessed += (s1aHtf ? 1 : 0)   + (s1bHtf ? 1 : 0)   + (s2aHtf ? 1 : 0)   + (s2bHtf ? 1 : 0)   + (s3Htf ? 1 : 0)  + (s4Htf ? 1 : 0)
 
 // ============================================================================
 // WEBHOOK ALERTS
@@ -989,7 +1669,7 @@ if showTable
     table.cell(perfTable, 1, 0, "",                  text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 0, 1, "HTF Bars Processed", text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 1, 1, str.tostring(htfBarsProcessed), text_color = tableTxtColor, bgcolor = tableBgColor)
-    table.cell(perfTable, 0, 2, "Sweeps / Continuations", text_color = tableTxtColor, bgcolor = tableBgColor)
+    table.cell(perfTable, 0, 2, "Signals (Sweep/Cont/Div/BB)", text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 1, 2, str.tostring(sweepsDetected), text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 0, 3, "Zones Found (OB/FVG)", text_color = tableTxtColor, bgcolor = tableBgColor)
     table.cell(perfTable, 1, 3, str.tostring(zonesFound), text_color = tableTxtColor, bgcolor = tableBgColor)
@@ -1043,16 +1723,21 @@ if showTable
 //   timeframe), not full swing-pivot structure mapping.
 // - This is now a strategy() script: each pair places real strategy.entry()/
 //   strategy.exit() orders under its own ID (S1_4H_5M, S1_1H_1M, S2_1H_1M,
-//   S2_4H_5M), so TradingView's Strategy Tester tab shows a real backtest —
-//   equity curve, drawdown, and each pair's trades listed separately (Pine
-//   tracks P&L per entry ID even though all IDs share one net position at
-//   the broker level). The custom top-right table mirrors the same
-//   entry/stop/target logic internally for its win-rate/drawdown display,
-//   so the two should agree; the Strategy Tester additionally factors in
-//   whatever commission/slippage/position size you set in the Properties
-//   tab, which the custom table does not.
+//   S2_4H_5M, S3_DIV, S4_BB), so TradingView's Strategy Tester tab shows a
+//   real backtest — equity curve, drawdown, and each pair's trades listed
+//   separately (Pine tracks P&L per entry ID even though all IDs share one
+//   net position at the broker level). The custom top-right table mirrors
+//   the same entry/stop/target logic internally for its win-rate/drawdown
+//   display, so the two should agree; the Strategy Tester additionally
+//   factors in whatever commission/slippage/position size you set in the
+//   Properties tab, which the custom table does not.
 // - Two pairs firing in opposite directions at the same time will still net
 //   against each other at the position-size/margin level (standard Pine
 //   strategy behavior — one net position per symbol), even though each
 //   shows as a separate trade in the trade list.
+// - Strategies 3 (RSI Divergence) and 4 (Bollinger Bands) each run a single
+//   pair/instance (not two, like S1/S2) — their own Timeframe Mode and
+//   Entry Trigger settings already give a lot of configuration room without
+//   doubling up. pyramiding is 6 to match the total number of pair IDs that
+//   could now be open at once across all four strategies.
 // ============================================================================
