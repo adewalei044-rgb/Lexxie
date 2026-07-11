@@ -377,6 +377,10 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
     var float slPx     = na
     var float tpPx     = na
     var bool  beDone    = false
+    var line  slLine = na
+    var label slTag  = na
+    var line  tpLine = na
+    var label tpTag  = na
 
     // Live-candle trackers. Each bar we fetch the CURRENT (possibly still
     // forming) sweep-TF / entry-TF candle via f_htfNow (no [1] inside the
@@ -565,8 +569,10 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
             else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
@@ -586,8 +592,10 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         // MANAGE OPEN TRADE — break-even, target, stop. This just moves the
         // REAL pending strategy.exit() order when break-even triggers
@@ -618,6 +626,15 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if low <= tpPx or high >= slPx
                     inTrade := false
+
+            if showSlTpLabels and not na(slLine)
+                line.set_y1(slLine, slPx)
+                line.set_y2(slLine, slPx)
+                line.set_x2(slLine, bar_index)
+                label.set_xy(slTag, bar_index, slPx)
+                label.set_text(slTag, "SL " + str.tostring(slPx, format.mintick))
+                line.set_x2(tpLine, bar_index)
+                label.set_xy(tpTag, bar_index, tpPx)
 
             if not inTrade and oneSignalPerSweep
                 armed    := false
@@ -677,6 +694,10 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
     var float slPx     = na
     var float tpPx     = na
     var bool  beDone    = false
+    var line  slLine = na
+    var label slTag  = na
+    var line  tpLine = na
+    var label tpTag  = na
 
     // Live-candle trackers — see the matching comment in f_sweepPair for why
     // this replaces the old [1]-inside-security() technique.
@@ -832,8 +853,10 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
             else if dirState == -1 and e3h >= fvgBot and e3c < fvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
@@ -853,8 +876,10 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         // Mirrors the real strategy.exit() order placed at entry above; see
         // the equivalent comment in f_sweepPair for why break-even re-issues
@@ -880,6 +905,15 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if low <= tpPx or high >= slPx
                     inTrade := false
+
+            if showSlTpLabels and not na(slLine)
+                line.set_y1(slLine, slPx)
+                line.set_y2(slLine, slPx)
+                line.set_x2(slLine, bar_index)
+                label.set_xy(slTag, bar_index, slPx)
+                label.set_text(slTag, "SL " + str.tostring(slPx, format.mintick))
+                line.set_x2(tpLine, bar_index)
+                label.set_xy(tpTag, bar_index, tpPx)
 
             if not inTrade and oneSignalPerCont
                 armed  := false
@@ -942,6 +976,10 @@ f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, p
     var float slPx     = na
     var float tpPx     = na
     var bool  beDone   = false
+    var line  slLine = na
+    var label slTag  = na
+    var line  tpLine = na
+    var label tpTag  = na
 
     var float curDO = na
     var float curDH = na
@@ -1015,8 +1053,10 @@ f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, p
                         strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                         label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
                         if showSlTpLabels
-                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                            slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                            slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                            tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
                 else if closedBearDiv
                     dirState        := -1
                     divPivotPx      := closedPivotBear
@@ -1044,8 +1084,10 @@ f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, p
                         strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                         label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
                         if showSlTpLabels
-                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                            slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                            slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                            tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         if waitingEntry and newEntryBar
             barsWaited += 1
@@ -1118,8 +1160,10 @@ f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, p
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLongZ)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
             else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
@@ -1139,8 +1183,10 @@ f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, p
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShortZ)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         if inTrade
             if tradeDir == 1
@@ -1161,6 +1207,15 @@ f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, p
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if low <= tpPx or high >= slPx
                     inTrade := false
+
+            if showSlTpLabels and not na(slLine)
+                line.set_y1(slLine, slPx)
+                line.set_y2(slLine, slPx)
+                line.set_x2(slLine, bar_index)
+                label.set_xy(slTag, bar_index, slPx)
+                label.set_text(slTag, "SL " + str.tostring(slPx, format.mintick))
+                line.set_x2(tpLine, bar_index)
+                label.set_xy(tpTag, bar_index, tpPx)
 
             if not inTrade and oneSignalPerDiv
                 armed    := false
@@ -1227,6 +1282,10 @@ f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode
     var float slPx     = na
     var float tpPx     = na
     var bool  beDone   = false
+    var line  slLine = na
+    var label slTag  = na
+    var line  tpLine = na
+    var label tpTag  = na
 
     var float curDO = na
     var float curDH = na
@@ -1304,8 +1363,10 @@ f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode
                         strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLong)
                         label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
                         if showSlTpLabels
-                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                            slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                            slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                            tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
                 else if bearSig
                     dirState       := -1
                     bbAnchorPx     := anchorBear
@@ -1333,8 +1394,10 @@ f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode
                         strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShort)
                         label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
                         if showSlTpLabels
-                            label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                            label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                            slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                            slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                            tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                            tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         if waitingEntry and newEntryBar
             barsWaited += 1
@@ -1407,8 +1470,10 @@ f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgLongZ)
                 label.new(bar_index, low, "BUY", style = label.style_label_up, color = color.new(color.green, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
             else if dirState == -1 and e3h >= obfvgBot and e3c < obfvgTop and e3c < e3o
                 inTrade      := true
                 tradeDir     := -1
@@ -1428,8 +1493,10 @@ f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode
                 strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgShortZ)
                 label.new(bar_index, high, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
                 if showSlTpLabels
-                    label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
-                    label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
+                    slLine := line.new(bar_index, slPx, bar_index, slPx, color = color.new(color.red, 0), width = 1, style = line.style_dashed)
+                    slTag  := label.new(bar_index, slPx, "SL " + str.tostring(slPx, format.mintick), style = label.style_label_right, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+                    tpLine := line.new(bar_index, tpPx, bar_index, tpPx, color = color.new(color.green, 0), width = 1, style = line.style_dashed)
+                    tpTag  := label.new(bar_index, tpPx, "TP " + str.tostring(tpPx, format.mintick), style = label.style_label_right, color = color.new(color.green, 0), textcolor = color.white, size = size.tiny)
 
         if inTrade
             if tradeDir == 1
@@ -1450,6 +1517,15 @@ f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode
                     strategy.exit(pairId + "X", from_entry = pairId, stop = slPx, limit = tpPx, alert_message = webhookMsgBE)
                 if low <= tpPx or high >= slPx
                     inTrade := false
+
+            if showSlTpLabels and not na(slLine)
+                line.set_y1(slLine, slPx)
+                line.set_y2(slLine, slPx)
+                line.set_x2(slLine, bar_index)
+                label.set_xy(slTag, bar_index, slPx)
+                label.set_text(slTag, "SL " + str.tostring(slPx, format.mintick))
+                line.set_x2(tpLine, bar_index)
+                label.set_xy(tpTag, bar_index, tpPx)
 
             if not inTrade and oneSignalPerBB
                 armed    := false
