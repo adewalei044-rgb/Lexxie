@@ -636,10 +636,11 @@ f_sweepPair(pairTag, pairId, sweepOn, sweepTF, entryOn, entryTF, requireFullClos
                 line.set_x2(tpLine, bar_index)
                 label.set_xy(tpTag, bar_index, tpPx)
 
-            if not inTrade and oneSignalPerSweep
-                armed    := false
-                obfvgTop := na
-                obfvgBot := na
+            if not inTrade
+                armed := false
+                if oneSignalPerSweep
+                    obfvgTop := na
+                    obfvgBot := na
 
         // Update live-candle trackers to this bar's fetch, unconditionally,
         // so next bar can detect the rollover the same way.
@@ -915,10 +916,11 @@ f_contPair(pairTag, pairId, trendOn, trendTF, entryOn, entryTF, trendMethod, ema
                 line.set_x2(tpLine, bar_index)
                 label.set_xy(tpTag, bar_index, tpPx)
 
-            if not inTrade and oneSignalPerCont
-                armed  := false
-                fvgTop := na
-                fvgBot := na
+            if not inTrade
+                armed := false
+                if oneSignalPerCont
+                    fvgTop := na
+                    fvgBot := na
 
         // Update live-candle trackers to this bar's fetch, unconditionally,
         // so next bar can detect the rollover the same way.
@@ -1217,10 +1219,11 @@ f_rsiDivPair(pairTag, pairId, pairOn, divTF, tfMode, entryTFin, rsiLen, pLeft, p
                 line.set_x2(tpLine, bar_index)
                 label.set_xy(tpTag, bar_index, tpPx)
 
-            if not inTrade and oneSignalPerDiv
-                armed    := false
-                obfvgTop := na
-                obfvgBot := na
+            if not inTrade
+                armed := false
+                if oneSignalPerDiv
+                    obfvgTop := na
+                    obfvgBot := na
 
         curDO := do_
         curDH := dh
@@ -1527,10 +1530,11 @@ f_bbPair(pairTag, pairId, pairOn, bbTF, tfMode, entryTFin, bbLen, bbMult, bbMode
                 line.set_x2(tpLine, bar_index)
                 label.set_xy(tpTag, bar_index, tpPx)
 
-            if not inTrade and oneSignalPerBB
-                armed    := false
-                obfvgTop := na
-                obfvgBot := na
+            if not inTrade
+                armed := false
+                if oneSignalPerBB
+                    obfvgTop := na
+                    obfvgBot := na
 
         curDO := do_
         curDH := dh
