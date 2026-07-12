@@ -71,10 +71,9 @@ unknown. This EA exposes it all as Inputs:
 
 - **Indicator Signal Source** -- indicator name, timeframe, Two-Buffer
   (separate buy/sell buffers, default 0/1) or Single-Buffer (sign of one
-  value) signal mode, and which buffer index(es) to read.
-- **`InpDebugScanBuffers = true`** -- prints every buffer's value to the
-  Experts log each new bar, so you can identify the real buy/sell buffer
-  indices by observation before switching on real trading.
+  value) signal mode, and which buffer index(es) to read. Adjust
+  `InpBuyBufferIndex`/`InpSellBufferIndex` if your build of the indicator
+  plots its signals on different buffers.
 - **Risk / Trade Management** -- fixed percent SL/TP only (default SL 0.5% /
   TP 1%), no break-even.
 - **Position Sizing** -- same Fixed Lots / Fixed Money / Risk % of Equity
@@ -86,9 +85,9 @@ unknown. This EA exposes it all as Inputs:
 Install the same way: copy `TrendFocusCore.mqh` to `MQL4/Include/` (it's
 reused here for position sizing and the session filter), copy `TrendFocus.ex4`
 itself and this EA into `MQL4/Indicators/` and `MQL4/Experts/` respectively,
-then compile and attach to a chart. Start with `InpDebugScanBuffers = true`
-and `InpTradingEnabled = false` to read the buffer values in the Experts log
-before risking real orders.
+then compile and attach to a chart. It trades immediately off buffers 0/1 by
+default -- if `TrendFocus.ex4` plots its signals on different buffers, update
+`InpBuyBufferIndex`/`InpSellBufferIndex` accordingly.
 
 ### Notes / known limitations
 

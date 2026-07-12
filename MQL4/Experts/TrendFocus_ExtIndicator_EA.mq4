@@ -6,10 +6,10 @@
 //| TrendFocus_MultiStrategy_EA.mq4. This is a separate product.      |
 //|                                                                    |
 //| TrendFocus.ex4 is a compiled binary -- its internal buffer layout |
-//| is not known. Buffer indices and signal interpretation are all    |
-//| Inputs-tab settings below; use InpDebugScanBuffers=true to print  |
-//| each buffer's value every bar and identify the right indices by   |
-//| observation before enabling real trading.                         |
+//| is not known, so buffer indices and signal interpretation are all |
+//| Inputs-tab settings below (defaults: buffer 0 = buy, buffer 1 =   |
+//| sell). Adjust InpBuyBufferIndex/InpSellBufferIndex if your build  |
+//| of the indicator uses different buffers.                          |
 //|                                                                    |
 //| No break-even management. SL/TP are fixed percent only:           |
 //| SL 0.5% / TP 1% by default (Inputs tab > Risk / Trade Management).|
@@ -64,10 +64,8 @@ input int                  InpCustomSessionEndHour   = 17;
 input int                  InpCustomSessionEndMin    = 0;
 input int                  InpBrokerGMTOffset        = 0;
 
-input group "==== Notifications / Debug ===="
+input group "==== Notifications ===="
 input bool InpEnablePushNotify   = false;
-input bool InpDebugScanBuffers   = false;   // prints every buffer's value each new bar -- use to find the real buy/sell buffer indices
-input int  InpDebugBufferCount   = 8;
 
 //====================================================================
 // STATE
@@ -115,18 +113,6 @@ void CalcFixedPctSLTP(int dir, double entryPx, double &slPx, double &tpPx)
 {
    if(dir==1) { slPx=entryPx*(1-InpSLPercent/100.0); tpPx=entryPx*(1+InpTPPercent/100.0); }
    else       { slPx=entryPx*(1+InpSLPercent/100.0); tpPx=entryPx*(1-InpTPPercent/100.0); }
-}
-
-void DebugScanBuffers()
-{
-   if(!InpDebugScanBuffers) return;
-   string msg = "TrendFocus buffer scan (shift="+IntegerToString(InpSignalShift)+"): ";
-   for(int b=0;b<InpDebugBufferCount;b++)
-   {
-      double v = iCustom(Symbol(), InpSignalTF, InpIndicatorName, b, InpSignalShift);
-      msg += "["+IntegerToString(b)+"]="+DoubleToString(v,Digits)+"  ";
-   }
-   Print(msg);
 }
 
 // Returns true if a signal is present this call; dir is set to 1 (buy) or -1 (sell).
@@ -191,7 +177,7 @@ void OnTick()
 
    datetime t0 = iTime(Symbol(), InpSignalTF, 0);
    bool newBar = (t0 != g_lastBarTime);
-   if(newBar) { g_lastBarTime=t0; DebugScanBuffers(); }
+   if(newBar) g_lastBarTime=t0;
 
    if(!InpTradingEnabled) return;
    if(InpRequireNewSignalBar && !newBar) return;
