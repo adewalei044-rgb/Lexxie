@@ -59,6 +59,37 @@ the indicator for a signal-only view, or just the EA to trade headless.
   on fill/break-even; the target URL must be whitelisted under
   *Tools > Options > Expert Advisors > Allow WebRequest for listed URL*.
 
+## TrendFocus Ext-Indicator EA (separate product)
+
+`MQL4/Experts/TrendFocus_ExtIndicator_EA.mq4` is a **standalone EA**, unrelated
+to the multi-strategy files above. It trades signals read directly from the
+original compiled `TrendFocus.ex4` indicator via `iCustom()`, instead of
+containing any of the Pine-derived strategy logic.
+
+Because `TrendFocus.ex4` is a compiled binary, its internal buffer layout is
+unknown. This EA exposes it all as Inputs:
+
+- **Indicator Signal Source** -- indicator name, timeframe, Two-Buffer
+  (separate buy/sell buffers, default 0/1) or Single-Buffer (sign of one
+  value) signal mode, and which buffer index(es) to read.
+- **`InpDebugScanBuffers = true`** -- prints every buffer's value to the
+  Experts log each new bar, so you can identify the real buy/sell buffer
+  indices by observation before switching on real trading.
+- **Risk / Trade Management** -- fixed percent SL/TP only (default SL 0.5% /
+  TP 1%), no break-even.
+- **Position Sizing** -- same Fixed Lots / Fixed Money / Risk % of Equity
+  modes as the multi-strategy EA.
+- **Trade Controls** -- close-on-opposite-signal, max open trades, max
+  trades/day, max daily loss %, spread guard, slippage, magic number.
+- **Session Filter** -- same as the multi-strategy files.
+
+Install the same way: copy `TrendFocusCore.mqh` to `MQL4/Include/` (it's
+reused here for position sizing and the session filter), copy `TrendFocus.ex4`
+itself and this EA into `MQL4/Indicators/` and `MQL4/Experts/` respectively,
+then compile and attach to a chart. Start with `InpDebugScanBuffers = true`
+and `InpTradingEnabled = false` to read the buffer values in the Experts log
+before risking real orders.
+
 ### Notes / known limitations
 
 - Written without a MetaEditor compiler available in this environment --
