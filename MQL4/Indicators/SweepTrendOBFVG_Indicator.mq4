@@ -1,20 +1,21 @@
 //+------------------------------------------------------------------+
-//| TrendFocus_MultiStrategy.mq4                                      |
-//| Visual signal indicator for the 4-strategy TrendFocus system      |
-//| (Sweep Reversal, Trend Continuation, RSI Divergence, Bollinger    |
-//| Bands). Draws the same sweep/continuation boxes, OB/FVG zones,    |
-//| BUY/SELL labels and SL/TP lines as the source Pine script, and    |
-//| fires MT4 alerts/push notifications on each signal.               |
+//| SweepTrendOBFVG_Indicator.mq4                                     |
+//| Visual signal indicator for the 4-strategy "Multi-Strategy: Sweep |
+//| Reversal & Trend Continuation (OB/FVG)" system (Sweep Reversal,   |
+//| Trend Continuation, RSI Divergence, Bollinger Bands). Draws the   |
+//| same sweep/continuation boxes, OB/FVG zones, BUY/SELL labels and  |
+//| SL/TP lines as the source Pine script, and fires MT4 alerts/push  |
+//| notifications on each signal.                                     |
 //|                                                                    |
 //| This indicator places NO trades -- it is signal/visual only.      |
-//| Pair it with TrendFocus_MultiStrategy_EA.mq4 for automated        |
-//| execution of the same signals.                                    |
+//| Pair it with SweepTrendOBFVG_EA.mq4 for automated execution of    |
+//| the same signals.                                                 |
 //+------------------------------------------------------------------+
-#property copyright "TrendFocus Multi-Strategy Port"
+#property copyright "Sweep Reversal & Trend Continuation (OB/FVG) MT4 Port"
 #property strict
 #property indicator_chart_window
 
-#include <TrendFocusCore.mqh>
+#include <SweepTrendOBFVG_Core.mqh>
 
 //====================================================================
 // INPUTS
@@ -333,7 +334,7 @@ void DrawPanel()
    string enabledStr = (InpEnableS1?"S1 ":"") + (InpEnableS2?"S2 ":"") + (InpEnableS3?"S3 ":"") + (InpEnableS4?"S4 ":"");
    if(StringLen(enabledStr)==0) enabledStr="(none)";
 
-   PanelLabel("TFMS_p_title", "TrendFocus Multi-Strategy (signals only)", x, y); y+=dy;
+   PanelLabel("TFMS_p_title", "Sweep/Trend/Div/BB Multi-Strategy (signals only)", x, y); y+=dy;
    PanelLabel("TFMS_p_enabled", "Enabled: " + enabledStr, x, y); y+=dy;
    PanelLabel("TFMS_p_htf", "HTF Bars Processed: " + IntegerToString(g_htfBarsProcessed), x, y); y+=dy;
    PanelLabel("TFMS_p_sig", "Signals Detected: " + IntegerToString(g_signalsDetected), x, y); y+=dy;

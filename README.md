@@ -1,25 +1,27 @@
 # adewalei044-rgb
 Just getting it done
 
-## TrendFocus Multi-Strategy (MT4)
+## Sweep Reversal & Trend Continuation (OB/FVG) Multi-Strategy (MT4)
 
-A port of a 4-strategy Pine Script system (Sweep Reversal, Trend
+A port of a 4-strategy Pine Script system (`strategy("Multi-Strategy: Sweep
+Reversal & Trend Continuation (OB/FVG)", ...)`: Sweep Reversal, Trend
 Continuation, RSI Divergence, Bollinger Bands) to MetaTrader 4, split into
 two files that share one signal engine:
 
-- `MQL4/Include/TrendFocusCore.mqh` -- signal-detection logic only (no
+- `MQL4/Include/SweepTrendOBFVG_Core.mqh` -- signal-detection logic only (no
   chart objects, no orders). Both files below include this.
-- `MQL4/Indicators/TrendFocus_MultiStrategy.mq4` -- draws sweep/continuation
+- `MQL4/Indicators/SweepTrendOBFVG_Indicator.mq4` -- draws sweep/continuation
   boxes, OB/FVG zones, BUY/SELL labels, SL/TP lines, and an info panel.
   Fires MT4 alerts/push notifications on signals. **Places no trades.**
-- `MQL4/Experts/TrendFocus_MultiStrategy_EA.mq4` -- runs the same signal
-  engine and places real orders, with risk-based position sizing,
-  break-even management, max daily loss cutoff, max open trades, max
-  trades/day, session filter, and spread guard.
+- `MQL4/Experts/SweepTrendOBFVG_EA.mq4` -- runs the same signal engine and
+  places real orders, with risk-based position sizing, break-even
+  management, max daily loss cutoff, max open trades, max trades/day,
+  session filter, and spread guard.
 
 ### Install
 
-1. Copy `TrendFocusCore.mqh` into your terminal's `MQL4/Include/` folder.
+1. Copy `SweepTrendOBFVG_Core.mqh` into your terminal's `MQL4/Include/`
+   folder.
 2. Copy the indicator into `MQL4/Indicators/` and the EA into
    `MQL4/Experts/`.
 3. Open MetaEditor, open each `.mq4` file, and compile (F7). Fix any
@@ -58,36 +60,6 @@ the indicator for a signal-only view, or just the EA to trade headless.
 - **Webhook Alerts** (optional) -- posts a JSON payload via `WebRequest()`
   on fill/break-even; the target URL must be whitelisted under
   *Tools > Options > Expert Advisors > Allow WebRequest for listed URL*.
-
-## TrendFocus Ext-Indicator EA (separate product)
-
-`MQL4/Experts/TrendFocus_ExtIndicator_EA.mq4` is a **standalone EA**, unrelated
-to the multi-strategy files above. It trades signals read directly from the
-original compiled `TrendFocus.ex4` indicator via `iCustom()`, instead of
-containing any of the Pine-derived strategy logic.
-
-Because `TrendFocus.ex4` is a compiled binary, its internal buffer layout is
-unknown. This EA exposes it all as Inputs:
-
-- **Indicator Signal Source** -- indicator name, timeframe, Two-Buffer
-  (separate buy/sell buffers, default 0/1) or Single-Buffer (sign of one
-  value) signal mode, and which buffer index(es) to read. Adjust
-  `InpBuyBufferIndex`/`InpSellBufferIndex` if your build of the indicator
-  plots its signals on different buffers.
-- **Risk / Trade Management** -- fixed percent SL/TP only (default SL 0.5% /
-  TP 1%), no break-even.
-- **Position Sizing** -- same Fixed Lots / Fixed Money / Risk % of Equity
-  modes as the multi-strategy EA.
-- **Trade Controls** -- close-on-opposite-signal, max open trades, max
-  trades/day, max daily loss %, spread guard, slippage, magic number.
-- **Session Filter** -- same as the multi-strategy files.
-
-Install the same way: copy `TrendFocusCore.mqh` to `MQL4/Include/` (it's
-reused here for position sizing and the session filter), copy `TrendFocus.ex4`
-itself and this EA into `MQL4/Indicators/` and `MQL4/Experts/` respectively,
-then compile and attach to a chart. It trades immediately off buffers 0/1 by
-default -- if `TrendFocus.ex4` plots its signals on different buffers, update
-`InpBuyBufferIndex`/`InpSellBufferIndex` accordingly.
 
 ### Notes / known limitations
 

@@ -1,8 +1,8 @@
 //+------------------------------------------------------------------+
-//| TrendFocusCore.mqh                                                |
+//| SweepTrendOBFVG_Core.mqh                                          |
 //| Shared multi-strategy signal engine used by both                  |
-//| TrendFocus_MultiStrategy.mq4 (indicator) and                      |
-//| TrendFocus_MultiStrategy_EA.mq4 (expert advisor).                 |
+//| SweepTrendOBFVG_Indicator.mq4 (indicator) and                     |
+//| SweepTrendOBFVG_EA.mq4 (expert advisor).                          |
 //|                                                                    |
 //| Ports the four-strategy Pine Script (Sweep Reversal, Trend         |
 //| Continuation, RSI Divergence, Bollinger Bands) to MQL4. Unlike    |

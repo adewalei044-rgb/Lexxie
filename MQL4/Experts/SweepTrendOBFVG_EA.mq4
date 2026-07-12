@@ -1,19 +1,20 @@
 //+------------------------------------------------------------------+
-//| TrendFocus_MultiStrategy_EA.mq4                                   |
-//| Automated execution of the 4-strategy TrendFocus signal engine    |
-//| (Sweep Reversal, Trend Continuation, RSI Divergence, Bollinger    |
-//| Bands). Places real orders with structural or fixed-% SL/TP,      |
-//| manages break-even, and enforces real risk controls: risk-based   |
-//| position sizing, max daily loss cutoff, max open trades, max      |
-//| trades/day, session filter and spread guard.                      |
+//| SweepTrendOBFVG_EA.mq4                                            |
+//| Automated execution of the 4-strategy "Multi-Strategy: Sweep      |
+//| Reversal & Trend Continuation (OB/FVG)" signal engine (Sweep      |
+//| Reversal, Trend Continuation, RSI Divergence, Bollinger Bands).   |
+//| Places real orders with structural or fixed-% SL/TP, manages      |
+//| break-even, and enforces real risk controls: risk-based position  |
+//| sizing, max daily loss cutoff, max open trades, max trades/day,   |
+//| session filter and spread guard.                                  |
 //|                                                                    |
-//| Pairs with TrendFocus_MultiStrategy.mq4 for visuals -- run both   |
+//| Pairs with SweepTrendOBFVG_Indicator.mq4 for visuals -- run both  |
 //| on the same chart/symbol for signals you can see AND trade.       |
 //+------------------------------------------------------------------+
-#property copyright "TrendFocus Multi-Strategy Port"
+#property copyright "Sweep Reversal & Trend Continuation (OB/FVG) MT4 Port"
 #property strict
 
-#include <TrendFocusCore.mqh>
+#include <SweepTrendOBFVG_Core.mqh>
 
 //====================================================================
 // INPUTS -- signal customization (identical to the companion indicator)
